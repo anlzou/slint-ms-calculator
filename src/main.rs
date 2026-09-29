@@ -11,12 +11,27 @@ fn fit_font(text: &str) -> f32 {
     (330.0 / (n * 0.62)).clamp(15.0, 34.0)
 }
 
+/// Slint 1.18 无系统深浅色 API，读注册表 AppsUseLightTheme（0=深色）
+fn system_dark() -> bool {
+    std::process::Command::new("reg")
+        .args([
+            "query",
+            r"HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize",
+            "/v",
+            "AppsUseLightTheme",
+        ])
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).contains("0x0"))
+        .unwrap_or(false)
+}
+
 /// 把 App 状态同步到 UI；历史模型只在版本号变化时整体重建
 #[derive(Clone)]
 struct UiCtx {
     weak: slint::Weak<MainWindow>,
     hist: Rc<VecModel<HistoryItem>>,
     seq: Rc<Cell<u64>>,
+    sys_dark: Rc<Cell<bool>>,
 }
 
 impl UiCtx {
@@ -27,6 +42,12 @@ impl UiCtx {
         ui.set_result_text(big.into());
         ui.set_expression_text(a.small_line().into());
         ui.set_memory_busy(a.memory_busy());
+        let dark = match ui.get_theme_mode() {
+            0 => false,
+            1 => true,
+            _ => self.sys_dark.get(),
+        };
+        ui.global::<Theme>().set_dark(dark);
         if self.seq.get() != a.history_seq() {
             self.seq.set(a.history_seq());
             self.hist.clear();
@@ -44,7 +65,12 @@ fn main() {
     let hist = Rc::new(VecModel::<HistoryItem>::default());
     ui.set_history(ModelRc::from(hist.clone()));
 
-    let ctx = UiCtx { weak: ui.as_weak(), hist, seq: Rc::new(Cell::new(0)) };
+    let ctx = UiCtx {
+        weak: ui.as_weak(),
+        hist,
+        seq: Rc::new(Cell::new(0)),
+        sys_dark: Rc::new(Cell::new(system_dark())),
+    };
 
     {
         let app = app.clone();
@@ -70,6 +96,20 @@ fn main() {
             ctx.sync(&app.borrow());
         });
     }
+    {
+        let app = app.clone();
+        let ctx = ctx.clone();
+        ui.on_theme_mode_changed(move |_m: i32| {
+            ctx.sys_dark.set(system_dark());
+            ctx.sync(&app.borrow());
+        });
+    }
+    ui.on_open_link(|url| {
+        // Windows: start "" <url>；用 cmd 内建 start 打开默认浏览器
+        let _ = std::process::Command::new("cmd")
+            .args(["/C", "start", "", &url.to_string()])
+            .spawn();
+    });
 
     ctx.sync(&app.borrow());
     ui.run().unwrap();

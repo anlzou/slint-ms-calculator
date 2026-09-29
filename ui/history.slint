@@ -51,8 +51,18 @@ export component HistoryPanel inherits Rectangle {
     callback recall(int);
     callback cleared();
 
+    // 顶部分隔线（Rectangle 不支持单边 border，用细条补）
+    Rectangle {
+        y: 0px;
+        height: 1px;
+        width: root.width;
+        background: Theme.border;
+    }
+
     VerticalLayout {
         padding: 4px;
+        // 底部留白，避免最后一条记录被右下角清除按钮遮挡
+        padding-bottom: 30px;
         spacing: 2px;
 
         if root.items.length == 0: Text {
@@ -77,22 +87,21 @@ export component HistoryPanel inherits Rectangle {
                 }
             }
         }
+    }
 
-        HorizontalLayout {
-            min-height: 30px;
-            Rectangle { horizontal-stretch: 1; }
-
-            Rectangle {
-                min-width: 36px;
-                TouchArea {
-                    clicked => { root.cleared(); }
-                }
-                // 手绘垃圾桶：把手 / 盖 / 桶身
-                Rectangle { x: parent.width / 2 - 4px; y: parent.height / 2 - 8px; width: 8px; height: 1.5px; background: Theme.text-primary; }
-                Rectangle { x: parent.width / 2 - 9px; y: parent.height / 2 - 6px; width: 18px; height: 1.5px; background: Theme.text-primary; }
-                Rectangle { x: parent.width / 2 - 7px; y: parent.height / 2 - 3px; width: 14px; height: 11px; border-width: 1.5px; border-color: Theme.text-primary; border-radius: 2px; }
-            }
+    // 清除按钮：绝对定位钉在面板右下角（浮在列表之上）
+    Rectangle {
+        x: root.width - 42px;
+        y: root.height - 32px;
+        width: 36px;
+        height: 28px;
+        TouchArea {
+            clicked => { root.cleared(); }
         }
+        // 手绘垃圾桶：把手 / 盖 / 桶身
+        Rectangle { x: parent.width / 2 - 4px; y: parent.height / 2 - 8px; width: 8px; height: 1.5px; background: Theme.text-primary; }
+        Rectangle { x: parent.width / 2 - 9px; y: parent.height / 2 - 6px; width: 18px; height: 1.5px; background: Theme.text-primary; }
+        Rectangle { x: parent.width / 2 - 7px; y: parent.height / 2 - 3px; width: 14px; height: 11px; border-width: 1.5px; border-color: Theme.text-primary; border-radius: 2px; }
     }
 }
 
@@ -176,14 +185,35 @@ export component ModeMenu inherits Rectangle {
                 padding: 8px;
                 spacing: 2px;
 
-                Text { text: "计算器"; color: Theme.text-secondary; font-size: 12px; min-height: 22px; vertical-alignment: bottom; }
+                // 分组标题：Text 无 padding，用 Rectangle 包裹实现 44px 左缩进
+                Rectangle {
+                    min-height: 24px;
+                    Text {
+                        x: 44px;
+                        width: parent.width - 44px;
+                        text: "计算器";
+                        color: Theme.text-secondary;
+                        font-size: 12px;
+                        vertical-alignment: center;
+                    }
+                }
                 MenuItem { label: "标准"; glyph: "\u{e8ef}"; selected: true; available: true; picked => { root.picked(); } }
                 MenuItem { label: "科学"; glyph: "ƒ"; glyph-font: ""; picked => { root.picked(); } }
                 MenuItem { label: "绘图"; glyph: "•"; glyph-font: ""; picked => { root.picked(); } }
                 MenuItem { label: "程序员"; glyph: "\u{e765}"; picked => { root.picked(); } }
                 MenuItem { label: "日期计算"; glyph: "\u{e787}"; picked => { root.picked(); } }
 
-                Text { text: "转换器"; color: Theme.text-secondary; font-size: 12px; min-height: 26px; vertical-alignment: bottom; }
+                Rectangle {
+                    min-height: 24px;
+                    Text {
+                        x: 44px;
+                        width: parent.width - 44px;
+                        text: "转换器";
+                        color: Theme.text-secondary;
+                        font-size: 12px;
+                        vertical-alignment: center;
+                    }
+                }
                 MenuItem { label: "货币"; glyph: "¥"; glyph-font: ""; picked => { root.picked(); } }
                 MenuItem { label: "体积"; glyph: "•"; glyph-font: ""; picked => { root.picked(); } }
                 MenuItem { label: "长度"; glyph: "•"; glyph-font: ""; picked => { root.picked(); } }

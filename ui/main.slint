@@ -1,4 +1,6 @@
 import { Theme } from "theme.slint";
+// 必须从入口文件 re-export，Rust 端才会生成 global::<Theme>() 访问器
+export { Theme } from "theme.slint";
 import { DisplayArea } from "display.slint";
 import { KeypadKey } from "keypad.slint";
 import { MemoryBar } from "memory.slint";
@@ -25,44 +27,49 @@ export component MainWindow inherits Window {
     in property <bool> memory-busy;
     in property <float> result-font: 34;
     in property <[HistoryItem]> history;
+    // 0=浅色 1=深色 2=跟随系统（Rust 读 get_theme_mode 计算 Theme.dark）
+    in-out property <int> theme-mode: 2;
     callback key(string);
     callback history-recall(int);
     callback history-clear();
+    callback theme-mode-changed(int);
+    callback open-link(string);
 
     // ≡ 模式菜单浮层 / 时钟图标历史面板（回调内赋值用 =，属性名不带连字符以避开解析歧义）
     private property <bool> drawer: false;
     private property <bool> hist: false;
+    private property <bool> settings-open: false;
 
     private property <[KeyDef]> keys: [
-        { text: "%", code: "percent", accent: false },
-        { text: "CE", code: "ce", accent: false },
-        { text: "C", code: "clear", accent: false },
-        { text: "←", code: "backspace", accent: false },
+        { text: "%", code: "percent", accent: false, num: false },
+        { text: "CE", code: "ce", accent: false, num: false },
+        { text: "C", code: "clear", accent: false, num: false },
+        { text: "←", code: "backspace", accent: false, num: false },
 
-        { text: "1/x", code: "inv", accent: false },
-        { text: "x²", code: "square", accent: false },
-        { text: "√x", code: "sqrt", accent: false },
-        { text: "÷", code: "/", accent: false },
+        { text: "1/x", code: "inv", accent: false, num: false },
+        { text: "x²", code: "square", accent: false, num: false },
+        { text: "√x", code: "sqrt", accent: false, num: false },
+        { text: "÷", code: "/", accent: false, num: false },
 
-        { text: "7", code: "7", accent: false },
-        { text: "8", code: "8", accent: false },
-        { text: "9", code: "9", accent: false },
-        { text: "×", code: "*", accent: false },
+        { text: "7", code: "7", accent: false, num: true },
+        { text: "8", code: "8", accent: false, num: true },
+        { text: "9", code: "9", accent: false, num: true },
+        { text: "×", code: "*", accent: false, num: false },
 
-        { text: "4", code: "4", accent: false },
-        { text: "5", code: "5", accent: false },
-        { text: "6", code: "6", accent: false },
-        { text: "-", code: "-", accent: false },
+        { text: "4", code: "4", accent: false, num: true },
+        { text: "5", code: "5", accent: false, num: true },
+        { text: "6", code: "6", accent: false, num: true },
+        { text: "-", code: "-", accent: false, num: false },
 
-        { text: "1", code: "1", accent: false },
-        { text: "2", code: "2", accent: false },
-        { text: "3", code: "3", accent: false },
-        { text: "+", code: "+", accent: false },
+        { text: "1", code: "1", accent: false, num: true },
+        { text: "2", code: "2", accent: false, num: true },
+        { text: "3", code: "3", accent: false, num: true },
+        { text: "+", code: "+", accent: false, num: false },
 
-        { text: "±", code: "negate", accent: false },
-        { text: "0", code: "0", accent: false },
-        { text: ".", code: ".", accent: false },
-        { text: "=", code: "=", accent: true },
+        { text: "±", code: "negate", accent: false, num: true },
+        { text: "0", code: "0", accent: false, num: true },
+        { text: ".", code: ".", accent: false, num: true },
+        { text: "=", code: "=", accent: true, num: false },
     ];
 
     forward-focus: kb;
@@ -101,36 +108,13 @@ export component MainWindow inherits Window {
 
                 Text {
                     text: "标准";
-                    color: Theme.text-secondary;
+                    color: Theme.text-primary;
                     font-size: 13px;
+                    font-weight: 600;
                     vertical-alignment: center;
                 }
 
                 Rectangle { horizontal-stretch: 1; }
-
-                // 时钟图标：打开/关闭历史面板（占据键盘区域）
-                Rectangle {
-                    min-width: 34px;
-                    min-height: 26px;
-                    hist-ta := TouchArea {
-                        clicked => { root.hist = !root.hist; }
-                    }
-                    Rectangle {
-                        background: hist-ta.has-hover ? Theme.key-hover : transparent;
-                        border-radius: Theme.radius;
-                    }
-                    Rectangle {
-                        x: parent.width / 2 - 7px;
-                        y: parent.height / 2 - 7px;
-                        width: 14px;
-                        height: 14px;
-                        border-radius: 7px;
-                        border-width: 1.5px;
-                        border-color: Theme.text-primary;
-                    }
-                    Rectangle { x: parent.width / 2 - 0.6px; y: parent.height / 2 - 5px; width: 1.2px; height: 5.5px; background: Theme.text-primary; }
-                    Rectangle { x: parent.width / 2 - 0.6px; y: parent.height / 2 - 0.6px; width: 4.5px; height: 1.2px; background: Theme.text-primary; }
-                }
             }
 
             DisplayArea {
@@ -159,10 +143,37 @@ export component MainWindow inherits Window {
                     text: k.text;
                     code: k.code;
                     accent: k.accent;
+                    num: k.num;
                     clicked(code) => { root.key(code); }
                 }
             }
         }
+    }
+
+    // 时钟图标：绝对定位钉在窗口右上角，打开/关闭历史面板（声明在遮罩之前，菜单打开时会被盖住）
+    Rectangle {
+        x: root.width - 40px;
+        y: 4px;
+        width: 36px;
+        height: 28px;
+        hist-ta := TouchArea {
+            clicked => { root.hist = !root.hist; }
+        }
+        Rectangle {
+            background: hist-ta.has-hover ? Theme.key-hover : transparent;
+            border-radius: Theme.radius;
+        }
+        Rectangle {
+            x: parent.width / 2 - 7px;
+            y: parent.height / 2 - 7px;
+            width: 14px;
+            height: 14px;
+            border-radius: 7px;
+            border-width: 1.5px;
+            border-color: Theme.text-primary;
+        }
+        Rectangle { x: parent.width / 2 - 0.6px; y: parent.height / 2 - 5px; width: 1.2px; height: 5.5px; background: Theme.text-primary; }
+        Rectangle { x: parent.width / 2 - 0.6px; y: parent.height / 2 - 0.6px; width: 4.5px; height: 1.2px; background: Theme.text-primary; }
     }
 
     // ≡ 菜单：半透明遮罩 + 左侧浮层，点遮罩收起
@@ -186,5 +197,14 @@ export component MainWindow inherits Window {
         width: 240px;
         height: root.height;
         picked => { root.drawer = false; }
+        settings => { root.drawer = false; root.settings-open = true; }
+    }
+
+    // 设置页：覆盖整个窗口
+    if root.settings-open: SettingsPage {
+        mode: root.theme-mode;
+        mode-picked(m) => { root.theme-mode = m; root.theme-mode-changed(m); }
+        back => { root.settings-open = false; }
+        open-link(url) => { root.open-link(url); }
     }
 }
