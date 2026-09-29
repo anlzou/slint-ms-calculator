@@ -1,0 +1,190 @@
+import { Theme } from "theme.slint";
+import { DisplayArea } from "display.slint";
+import { KeypadKey } from "keypad.slint";
+import { MemoryBar } from "memory.slint";
+import { HistoryPanel, HistoryItem, ModeMenu } from "history.slint";
+import { SettingsPage } from "settings.slint";
+
+struct KeyDef {
+    text: string,
+    code: string,
+    accent: bool,
+    num: bool,
+}
+
+export component MainWindow inherits Window {
+    title: "计算器";
+    background: Theme.window;
+    preferred-width: 380px;
+    preferred-height: 580px;
+    min-width: 320px;
+    min-height: 480px;
+
+    in property <string> expression-text;
+    in property <string> result-text: "0";
+    in property <bool> memory-busy;
+    in property <float> result-font: 34;
+    in property <[HistoryItem]> history;
+    callback key(string);
+    callback history-recall(int);
+    callback history-clear();
+
+    // ≡ 模式菜单浮层 / 时钟图标历史面板（回调内赋值用 =，属性名不带连字符以避开解析歧义）
+    private property <bool> drawer: false;
+    private property <bool> hist: false;
+
+    private property <[KeyDef]> keys: [
+        { text: "%", code: "percent", accent: false },
+        { text: "CE", code: "ce", accent: false },
+        { text: "C", code: "clear", accent: false },
+        { text: "←", code: "backspace", accent: false },
+
+        { text: "1/x", code: "inv", accent: false },
+        { text: "x²", code: "square", accent: false },
+        { text: "√x", code: "sqrt", accent: false },
+        { text: "÷", code: "/", accent: false },
+
+        { text: "7", code: "7", accent: false },
+        { text: "8", code: "8", accent: false },
+        { text: "9", code: "9", accent: false },
+        { text: "×", code: "*", accent: false },
+
+        { text: "4", code: "4", accent: false },
+        { text: "5", code: "5", accent: false },
+        { text: "6", code: "6", accent: false },
+        { text: "-", code: "-", accent: false },
+
+        { text: "1", code: "1", accent: false },
+        { text: "2", code: "2", accent: false },
+        { text: "3", code: "3", accent: false },
+        { text: "+", code: "+", accent: false },
+
+        { text: "±", code: "negate", accent: false },
+        { text: "0", code: "0", accent: false },
+        { text: ".", code: ".", accent: false },
+        { text: "=", code: "=", accent: true },
+    ];
+
+    forward-focus: kb;
+
+    // 键盘输入：物理按键文本直接透传给 Rust（数字/运算符/Enter/Esc/Backspace 等）
+    kb := FocusScope {
+        key-pressed(ev) => { root.key(ev.text); return accept; }
+
+        VerticalLayout {
+            padding: 6px;
+            spacing: 6px;
+
+            // 顶栏：≡ 开合历史面板 + 模式标题
+            HorizontalLayout {
+                min-height: 28px;
+                spacing: 4px;
+
+                Rectangle {
+                    min-width: 34px;
+                    min-height: 26px;
+                    menu-ta := TouchArea {
+                        clicked => { root.drawer = !root.drawer; }
+                    }
+                    Rectangle {
+                        background: menu-ta.has-hover ? Theme.key-hover : transparent;
+                        border-radius: Theme.radius;
+                    }
+                    Text {
+                        text: "≡";
+                        color: Theme.text-primary;
+                        font-size: 16px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+
+                Text {
+                    text: "标准";
+                    color: Theme.text-secondary;
+                    font-size: 13px;
+                    vertical-alignment: center;
+                }
+
+                Rectangle { horizontal-stretch: 1; }
+
+                // 时钟图标：打开/关闭历史面板（占据键盘区域）
+                Rectangle {
+                    min-width: 34px;
+                    min-height: 26px;
+                    hist-ta := TouchArea {
+                        clicked => { root.hist = !root.hist; }
+                    }
+                    Rectangle {
+                        background: hist-ta.has-hover ? Theme.key-hover : transparent;
+                        border-radius: Theme.radius;
+                    }
+                    Rectangle {
+                        x: parent.width / 2 - 7px;
+                        y: parent.height / 2 - 7px;
+                        width: 14px;
+                        height: 14px;
+                        border-radius: 7px;
+                        border-width: 1.5px;
+                        border-color: Theme.text-primary;
+                    }
+                    Rectangle { x: parent.width / 2 - 0.6px; y: parent.height / 2 - 5px; width: 1.2px; height: 5.5px; background: Theme.text-primary; }
+                    Rectangle { x: parent.width / 2 - 0.6px; y: parent.height / 2 - 0.6px; width: 4.5px; height: 1.2px; background: Theme.text-primary; }
+                }
+            }
+
+            DisplayArea {
+                expression-text: root.expression-text;
+                result-text: root.result-text;
+                result-font: root.result-font;
+            }
+
+            MemoryBar {
+                busy: root.memory-busy;
+                vertical-stretch: 0;
+                act(code) => { root.key(code); }
+            }
+
+            // 历史打开时面板占据键盘区域（同原版）
+            if root.hist: HistoryPanel {
+                items: root.history;
+                recall(i) => { root.history-recall(i); }
+                cleared => { root.history-clear(); }
+            }
+            if !root.hist: GridLayout {
+                spacing: 4px;
+                for k[index] in root.keys: KeypadKey {
+                    row: index / 4;
+                    col: Math.mod(index, 4);
+                    text: k.text;
+                    code: k.code;
+                    accent: k.accent;
+                    clicked(code) => { root.key(code); }
+                }
+            }
+        }
+    }
+
+    // ≡ 菜单：半透明遮罩 + 左侧浮层，点遮罩收起
+    Rectangle {
+        visible: root.drawer;
+        x: 0px;
+        y: 0px;
+        width: root.width;
+        height: root.height;
+        background: rgba(0, 0, 0, 0.28);
+
+        TouchArea {
+            clicked => { root.drawer = false; }
+        }
+    }
+
+    ModeMenu {
+        visible: root.drawer;
+        x: 0px;
+        y: 0px;
+        width: 240px;
+        height: root.height;
+        picked => { root.drawer = false; }
+    }
+}

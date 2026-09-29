@@ -1,0 +1,71 @@
+import { Theme } from "theme.slint";
+
+component MemButton inherits Rectangle {
+    in property <string> text;
+    in property <string> code;
+    callback clicked(string);
+
+    min-width: 38px;
+    min-height: 26px;
+
+    property <bool> pressed <=> ta.pressed;
+
+    Rectangle {
+        background: root.pressed ? Theme.key-pressed : (ta.has-hover ? Theme.key-hover : Theme.card);
+        border-radius: Theme.radius;
+        border-width: 1px;
+        border-color: Theme.border;
+
+        Text {
+            text: root.text;
+            color: Theme.text-primary;
+            font-size: 12px;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+
+    ta := TouchArea {
+        clicked => { root.clicked(root.code); }
+    }
+}
+
+/// 记忆条：记忆槽有值时才出现，MC/MR/M+/M-/MS 与原版布局一致
+export component MemoryBar inherits Rectangle {
+    in property <bool> busy;
+    callback act(string);
+
+    visible: root.busy;
+    min-height: root.busy ? 34px : 0px;
+
+    Rectangle {
+        visible: root.busy;
+        background: Theme.card;
+        border-radius: Theme.radius;
+        border-width: 1px;
+        border-color: Theme.border;
+
+        HorizontalLayout {
+            padding: 3px;
+            spacing: 4px;
+
+            Rectangle {
+                min-width: 22px;
+                horizontal-stretch: 1;
+                Text {
+                    text: "M";
+                    color: Theme.text-secondary;
+                    font-size: 12px;
+                    horizontal-alignment: left;
+                    vertical-alignment: center;
+                }
+            }
+
+            MemButton { text: "MC"; code: "mc"; clicked(code) => { root.act(code); } }
+            MemButton { text: "MR"; code: "mr"; clicked(code) => { root.act(code); } }
+            MemButton { text: "M+"; code: "m+"; clicked(code) => { root.act(code); } }
+            MemButton { text: "M-"; code: "m-"; clicked(code) => { root.act(code); } }
+            MemButton { text: "MS"; code: "ms"; clicked(code) => { root.act(code); } }
+        }
+    }
+}

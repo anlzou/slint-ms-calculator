@@ -1,0 +1,189 @@
+import { Theme } from "theme.slint";
+
+component RadioRow inherits Rectangle {
+    in property <string> label;
+    in property <bool> checked: false;
+    callback picked();
+
+    min-height: 42px;
+
+    property <bool> pressed <=> ta.pressed;
+
+    Rectangle {
+        background: ta.has-hover ? Theme.key-hover : transparent;
+        border-radius: Theme.radius;
+
+        // Win11 单选钮：选中 = 粗环 + 中心点
+        Rectangle {
+            x: 14px;
+            y: (parent.height - 20px) / 2;
+            width: 20px;
+            height: 20px;
+            border-radius: 10px;
+            border-width: root.checked ? 5.5px : 1.5px;
+            border-color: root.checked ? Theme.accent : Theme.text-primary;
+
+            Rectangle {
+                visible: root.checked;
+                x: 4px;
+                y: 4px;
+                width: 7px;
+                height: 7px;
+                border-radius: 4px;
+                background: Theme.accent;
+            }
+        }
+        Text {
+            x: 48px;
+            width: parent.width - 52px;
+            text: root.label;
+            color: Theme.text-primary;
+            font-size: 13px;
+            vertical-alignment: center;
+        }
+    }
+
+    ta := TouchArea {
+        clicked => { root.picked(); }
+    }
+}
+
+component SectionTitle inherits Text {
+    in property <string> title;
+    min-height: 30px;
+    vertical-alignment: bottom;
+    text: root.title;
+    color: Theme.text-primary;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+/// 设置页：菜单底部"设置"进入，覆盖整个窗口
+export component SettingsPage inherits Rectangle {
+    in property <int> mode: 2;
+    callback mode-picked(int);
+    callback back();
+
+    Rectangle {
+        background: Theme.window;
+    }
+
+    VerticalLayout {
+        padding: 12px;
+        spacing: 6px;
+
+        HorizontalLayout {
+            min-height: 34px;
+            spacing: 6px;
+
+            Rectangle {
+                min-width: 34px;
+                TouchArea {
+                    clicked => { root.back(); }
+                }
+                Text {
+                    font-family: "Segoe MDL2 Assets";
+                    text: "\u{e72b}";
+                    font-size: 14px;
+                    color: Theme.text-primary;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+            Text {
+                text: "设置";
+                font-size: 18px;
+                color: Theme.text-primary;
+                vertical-alignment: center;
+            }
+        }
+
+        SectionTitle { title: "外观"; }
+
+        Rectangle {
+            min-height: 178px;
+            Rectangle {
+                background: Theme.card;
+                border-radius: 8px;
+                border-width: 1px;
+                border-color: Theme.border;
+            }
+            VerticalLayout {
+                padding: 4px;
+                spacing: 0;
+
+                HorizontalLayout {
+                    padding-left: 12px;
+                    padding-right: 12px;
+                    spacing: 12px;
+                    min-height: 44px;
+
+                    Text {
+                        font-family: "Segoe MDL2 Assets";
+                        text: "\u{e790}";
+                        font-size: 15px;
+                        color: Theme.text-primary;
+                        vertical-alignment: center;
+                    }
+                    VerticalLayout {
+                        spacing: 1px;
+                        Text { text: "应用程序主题"; color: Theme.text-primary; font-size: 13px; }
+                        Text { text: "选择要显示的应用主题"; color: Theme.text-secondary; font-size: 11px; }
+                    }
+                    Rectangle { horizontal-stretch: 1; }
+                    Text {
+                        font-family: "Segoe MDL2 Assets";
+                        text: "\u{e70e}";
+                        font-size: 11px;
+                        color: Theme.text-primary;
+                        vertical-alignment: center;
+                    }
+                }
+
+                Rectangle { height: 1px; background: Theme.border; }
+
+                RadioRow { label: "浅色"; checked: root.mode == 0; picked => { root.mode-picked(0); } }
+                RadioRow { label: "深色"; checked: root.mode == 1; picked => { root.mode-picked(1); } }
+                RadioRow { label: "使用系统设置"; checked: root.mode == 2; picked => { root.mode-picked(2); } }
+            }
+        }
+
+        SectionTitle { title: "关于"; }
+
+        Rectangle {
+            min-height: 74px;
+            Rectangle {
+                background: Theme.card;
+                border-radius: 8px;
+                border-width: 1px;
+                border-color: Theme.border;
+            }
+            HorizontalLayout {
+                padding-left: 12px;
+                padding-right: 12px;
+                spacing: 12px;
+
+                Rectangle {
+                    min-width: 28px;
+                    Text {
+                        font-family: "Segoe MDL2 Assets";
+                        text: "\u{e8ef}";
+                        font-size: 16px;
+                        color: Theme.text-primary;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+                VerticalLayout {
+                    spacing: 1px;
+                    Text { text: "计算器"; color: Theme.text-primary; font-size: 13px; }
+                    Text { text: "Slint + Rust 复刻 Microsoft Calculator"; color: Theme.text-secondary; font-size: 11px; }
+                    Text { text: "0.1.0"; color: Theme.text-secondary; font-size: 11px; }
+                }
+                Rectangle { horizontal-stretch: 1; }
+            }
+        }
+
+        Rectangle { vertical-stretch: 1; }
+    }
+}

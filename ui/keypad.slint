@@ -1,0 +1,35 @@
+import { Theme } from "theme.slint";
+
+export component KeypadKey inherits Rectangle {
+    in property <string> text;
+    in property <string> code;
+    in property <bool> accent: false;
+    in property <bool> num: false;
+    callback clicked(string);
+
+    min-height: 46px;
+    vertical-stretch: 1;
+
+    property <bool> pressed <=> ta.pressed;
+
+    Rectangle {
+        background: root.accent
+            ? (root.pressed ? Theme.accent-pressed : (ta.has-hover ? Theme.accent-hover : Theme.accent))
+            : (root.pressed ? Theme.key-pressed : (ta.has-hover ? Theme.key-hover : (root.num ? Theme.key-bg-num : Theme.key-bg)));
+        border-radius: Theme.radius;
+        border-width: 1px;
+        border-color: root.accent ? Theme.accent : Theme.border;
+
+        Text {
+            text: root.text;
+            color: root.accent ? Theme.accent-text : Theme.text-primary;
+            font-size: 16px;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+
+    ta := TouchArea {
+        clicked => { root.clicked(root.code); }
+    }
+}

@@ -1,0 +1,44 @@
+import { Theme } from "theme.slint";
+
+export component DisplayArea inherits Rectangle {
+    in property <string> expression-text;
+    in property <string> result-text;
+    in property <float> result-font: 34;
+
+    min-height: 96px;
+    vertical-stretch: 1;
+
+    // 结果行：显式绑宽到显示屏（布局内 Text 宽度会被压缩成内容宽导致 elide），字号由 Rust 按长度缩放
+    res-row := Rectangle {
+        x: 8px;
+        width: root.width - 16px;
+        height: root.result-font * 1px + 10px;
+        y: root.height - self.height - 6px;
+
+        Text {
+            width: parent.width;
+            text: root.result-text;
+            color: Theme.text-primary;
+            font-size: root.result-font * 1px;
+            horizontal-alignment: right;
+            vertical-alignment: center;
+        }
+    }
+
+    Rectangle {
+        x: 8px;
+        width: root.width - 16px;
+        height: 22px;
+        y: res-row.y - self.height;
+
+        Text {
+            width: parent.width;
+            text: root.expression-text;
+            color: Theme.text-secondary;
+            font-size: 15px;
+            horizontal-alignment: right;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+    }
+}
