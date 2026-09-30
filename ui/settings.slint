@@ -76,8 +76,7 @@ export component SettingsPage inherits Rectangle {
         y: hdr-ta.y;
         width: hdr-ta.width;
         height: hdr-ta.height;
-        visible: hdr-ta.has-hover;
-        background: Theme.key-hover;
+        background: hdr-ta.pressed ? Theme.key-pressed : (hdr-ta.has-hover ? Theme.key-hover : transparent);
         border-radius: Theme.radius;
     }
     Text {

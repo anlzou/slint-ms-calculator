@@ -16,6 +16,8 @@ struct KeyDef {
 
 export component MainWindow inherits Window {
     title: "计算器";
+    // 标题栏图标：🧮(U+1F9EE) 渲染成的单色 PNG（GDI+ 不支持彩色 emoji 分层）
+    icon: @image-url("icon.png");
     background: Theme.window;
     // 置顶模式：隐藏标题栏（去掉三个窗口按钮）+ 恒在最前，窗口大小不变
     no-frame: root.pinned;
@@ -106,20 +108,20 @@ export component MainWindow inherits Window {
 
                 Rectangle {
                     visible: !root.chrome-hidden;
-                    min-width: root.chrome-hidden ? 0px : 34px;
-                    max-width: root.chrome-hidden ? 0px : 34px;
+                    min-width: root.chrome-hidden ? 0px : 26px;
+                    max-width: root.chrome-hidden ? 0px : 26px;
                     min-height: root.chrome-hidden ? 0px : 26px;
                     menu-ta := TouchArea {
                         clicked => { root.drawer = !root.drawer; }
                     }
                     Rectangle {
-                        background: menu-ta.has-hover ? Theme.key-hover : transparent;
+                        background: menu-ta.pressed ? Theme.key-pressed : (menu-ta.has-hover ? Theme.key-hover : transparent);
                         border-radius: Theme.radius;
                     }
                     Text {
-                        text: "≡";
+                        text: "三";
                         color: Theme.text-primary;
-                        font-size: 16px;
+                        font-size: 13px;
                         horizontal-alignment: center;
                         vertical-alignment: center;
                     }
@@ -138,7 +140,7 @@ export component MainWindow inherits Window {
                     vertical-alignment: center;
                 }
 
-                // 保持在顶部（图钉手绘，避免字形缺失）：切换全屏置顶，高度同 ≡，宽度收紧
+                // 保持在顶部：切换全屏置顶，高度同 ≡，宽度收紧；图标用 emoji
                 Rectangle {
                     min-width: 26px;
                     max-width: 26px;
@@ -149,32 +151,16 @@ export component MainWindow inherits Window {
                             root.pin-toggled();
                         }
                     }
+                    // emoji 不吃 color，选中态改用底色高亮；hover/按下有方块阴影
                     Rectangle {
-                        background: pin-ta.has-hover ? Theme.key-hover : transparent;
+                        background: root.pinned || pin-ta.pressed ? Theme.key-pressed : (pin-ta.has-hover ? Theme.key-hover : transparent);
                         border-radius: Theme.radius;
                     }
-                    // 图钉图标始终在格子中居中
-                    Rectangle {
-                        x: parent.width / 2 - 5px;
-                        y: parent.height / 2 - 6px;
-                        width: 10px;
-                        height: 2px;
-                        border-radius: 1px;
-                        background: root.pinned ? Theme.accent : Theme.text-primary;
-                    }
-                    Rectangle {
-                        x: parent.width / 2 - 3px;
-                        y: parent.height / 2 - 4px;
-                        width: 6px;
-                        height: 4px;
-                        background: root.pinned ? Theme.accent : Theme.text-primary;
-                    }
-                    Rectangle {
-                        x: parent.width / 2 - 1px;
-                        y: parent.height / 2;
-                        width: 2px;
-                        height: 5px;
-                        background: root.pinned ? Theme.accent : Theme.text-primary;
+                    Text {
+                        text: "📌";
+                        font-size: 13px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
                     }
                 }
 
@@ -229,20 +215,15 @@ export component MainWindow inherits Window {
             clicked => { root.hist = !root.hist; }
         }
         Rectangle {
-            background: hist-ta.has-hover ? Theme.key-hover : transparent;
+            background: hist-ta.pressed ? Theme.key-pressed : (hist-ta.has-hover ? Theme.key-hover : transparent);
             border-radius: Theme.radius;
         }
-        Rectangle {
-            x: parent.width / 2 - 7px;
-            y: parent.height / 2 - 7px;
-            width: 14px;
-            height: 14px;
-            border-radius: 7px;
-            border-width: 1.5px;
-            border-color: Theme.text-primary;
+        Text {
+            text: "🕐";
+            font-size: 15px;
+            horizontal-alignment: center;
+            vertical-alignment: center;
         }
-        Rectangle { x: parent.width / 2 - 0.6px; y: parent.height / 2 - 5px; width: 1.2px; height: 5.5px; background: Theme.text-primary; }
-        Rectangle { x: parent.width / 2 - 0.6px; y: parent.height / 2 - 0.6px; width: 4.5px; height: 1.2px; background: Theme.text-primary; }
     }
 
     // 置顶模式的关闭按钮：右上角（无边框后替代系统 X）
@@ -256,14 +237,13 @@ export component MainWindow inherits Window {
             clicked => { root.close-requested(); }
         }
         Rectangle {
-            background: close-ta.has-hover ? #c42b1c : transparent;
+            background: close-ta.pressed ? #b3271a : (close-ta.has-hover ? #c42b1c : transparent);
             border-radius: Theme.radius;
         }
-        // 关闭符号用文本 ×：Text 默认铺满父 Rectangle，天然居中，不会跑出按钮格
+        // 关闭符号用 emoji 叉
         Text {
-            text: "×";
-            color: close-ta.has-hover ? #ffffff : Theme.text-primary;
-            font-size: 26px;
+            text: "❌";
+            font-size: 13px;
             horizontal-alignment: center;
             vertical-alignment: center;
         }
