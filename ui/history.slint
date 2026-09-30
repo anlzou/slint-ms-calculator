@@ -185,7 +185,7 @@ export component ModeMenu inherits Rectangle {
                 padding: 8px;
                 spacing: 2px;
 
-                // 分组标题：与菜单项图标列同一起点（x:8）左对齐
+                // 分组标题：计算器
                 Rectangle {
                     min-height: 24px;
                     Text {
@@ -198,12 +198,13 @@ export component ModeMenu inherits Rectangle {
                         vertical-alignment: center;
                     }
                 }
-                MenuItem { label: "标准"; glyph: "\u{e8ef}"; selected: true; available: true; picked => { root.picked(); } }
-                MenuItem { label: "科学"; glyph: "ƒ"; glyph-font: ""; picked => { root.picked(); } }
-                MenuItem { label: "绘图"; glyph: "•"; glyph-font: ""; picked => { root.picked(); } }
-                MenuItem { label: "程序员"; glyph: "\u{e765}"; picked => { root.picked(); } }
-                MenuItem { label: "日期计算"; glyph: "\u{e787}"; picked => { root.picked(); } }
+                MenuItem { label: "标准"; glyph: "🧮"; glyph-font: ""; selected: true; available: true; picked => { root.picked(); } }
+                MenuItem { label: "科学"; glyph: "🧪"; glyph-font: ""; picked => { root.picked(); } } // 实验瓶
+                MenuItem { label: "绘图"; glyph: "📈"; glyph-font: ""; picked => { root.picked(); } }
+                MenuItem { label: "程序员"; glyph: "💻"; glyph-font: ""; picked => { root.picked(); } }
+                MenuItem { label: "日期计算"; glyph: "📅"; glyph-font: ""; picked => { root.picked(); } }
 
+                // 分组标题：转换器
                 Rectangle {
                     min-height: 24px;
                     Text {
@@ -216,19 +217,19 @@ export component ModeMenu inherits Rectangle {
                         vertical-alignment: center;
                     }
                 }
-                MenuItem { label: "货币"; glyph: "¥"; glyph-font: ""; picked => { root.picked(); } }
-                MenuItem { label: "体积"; glyph: "•"; glyph-font: ""; picked => { root.picked(); } }
-                MenuItem { label: "长度"; glyph: "•"; glyph-font: ""; picked => { root.picked(); } }
-                MenuItem { label: "重量"; glyph: "•"; glyph-font: ""; picked => { root.picked(); } }
-                MenuItem { label: "温度"; glyph: "℃"; glyph-font: ""; picked => { root.picked(); } }
-                MenuItem { label: "能量"; glyph: "•"; glyph-font: ""; picked => { root.picked(); } }
-                MenuItem { label: "面积"; glyph: "•"; glyph-font: ""; picked => { root.picked(); } }
-                MenuItem { label: "速度"; glyph: "•"; glyph-font: ""; picked => { root.picked(); } }
-                MenuItem { label: "时间"; glyph: "•"; glyph-font: ""; picked => { root.picked(); } }
-                MenuItem { label: "功率"; glyph: "•"; glyph-font: ""; picked => { root.picked(); } }
-                MenuItem { label: "数据"; glyph: "•"; glyph-font: ""; picked => { root.picked(); } }
-                MenuItem { label: "压强"; glyph: "•"; glyph-font: ""; picked => { root.picked(); } }
-                MenuItem { label: "角度"; glyph: "∠"; glyph-font: ""; picked => { root.picked(); } }
+                MenuItem { label: "货币"; glyph: "💱"; glyph-font: ""; picked => { root.picked(); } }
+                MenuItem { label: "体积"; glyph: "📦"; glyph-font: ""; picked => { root.picked(); } } // 立方体/箱子
+                MenuItem { label: "长度"; glyph: "📏"; glyph-font: ""; picked => { root.picked(); } } // 尺子
+                MenuItem { label: "重量"; glyph: "🏋️"; glyph-font: ""; picked => { root.picked(); } } // 哑铃
+                MenuItem { label: "温度"; glyph: "🌡️"; glyph-font: ""; picked => { root.picked(); } } // 温度计
+                MenuItem { label: "能量"; glyph: "🔋"; glyph-font: ""; picked => { root.picked(); } } // 电池 (避免与功率的闪电重复)
+                MenuItem { label: "面积"; glyph: "🗺️"; glyph-font: ""; picked => { root.picked(); } } // 地图
+                MenuItem { label: "速度"; glyph: "🏃"; glyph-font: ""; picked => { root.picked(); } } // 跑步
+                MenuItem { label: "时间"; glyph: "⏱️"; glyph-font: ""; picked => { root.picked(); } } // 秒表
+                MenuItem { label: "功率"; glyph: "⚡"; glyph-font: ""; picked => { root.picked(); } } // 雷电
+                MenuItem { label: "数据"; glyph: "💾"; glyph-font: ""; picked => { root.picked(); } } // 软盘
+                MenuItem { label: "压强"; glyph: "⏲️"; glyph-font: ""; picked => { root.picked(); } } // 仪表盘
+                MenuItem { label: "角度"; glyph: "📐"; glyph-font: ""; picked => { root.picked(); } } // 三角尺
             }
         }
 
