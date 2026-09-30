@@ -161,15 +161,15 @@ export component ModeMenu inherits Rectangle {
     callback picked();
     callback settings();
 
+    // 面板描边 + 圆角：左侧贴边取直角，仅右上/右下带弧度（同 Win11 浮出面板）
     Rectangle {
         background: Theme.card;
-    }
-    // 右缘描边（Rectangle 不支持单边 border，用细条补）
-    Rectangle {
-        x: root.width - 1px;
-        width: 1px;
-        height: root.height;
-        background: Theme.border;
+        border-top-left-radius: 0px;
+        border-bottom-left-radius: 0px;
+        border-top-right-radius: 8px;
+        border-bottom-right-radius: 8px;
+        border-width: 1px;
+        border-color: Theme.border;
     }
 
     VerticalLayout {
@@ -185,15 +185,16 @@ export component ModeMenu inherits Rectangle {
                 padding: 8px;
                 spacing: 2px;
 
-                // 分组标题：Text 无 padding，用 Rectangle 包裹实现 44px 左缩进
+                // 分组标题：与菜单项图标列同一起点（x:8）左对齐
                 Rectangle {
                     min-height: 24px;
                     Text {
-                        x: 44px;
-                        width: parent.width - 44px;
+                        x: 8px;
+                        width: parent.width - 12px;
                         text: "计算器";
                         color: Theme.text-secondary;
                         font-size: 12px;
+                        horizontal-alignment: left;
                         vertical-alignment: center;
                     }
                 }
@@ -206,11 +207,12 @@ export component ModeMenu inherits Rectangle {
                 Rectangle {
                     min-height: 24px;
                     Text {
-                        x: 44px;
-                        width: parent.width - 44px;
+                        x: 8px;
+                        width: parent.width - 12px;
                         text: "转换器";
                         color: Theme.text-secondary;
                         font-size: 12px;
+                        horizontal-alignment: left;
                         vertical-alignment: center;
                     }
                 }

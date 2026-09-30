@@ -3,7 +3,36 @@ slint::include_modules!();
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 use slint_ms_calculator::app::App;
 use std::cell::{Cell, RefCell};
+use std::ffi::c_void;
 use std::rc::Rc;
+
+#[link(name = "dwmapi")]
+unsafe extern "system" {
+    fn DwmSetWindowAttribute(
+        hwnd: *mut c_void,
+        attr: u32,
+        pv_attribute: *const u32,
+        cb_attribute: u32,
+    ) -> i32;
+}
+
+#[link(name = "user32")]
+unsafe extern "system" {
+    fn FindWindowW(class: *const u16, title: *const u16) -> *mut c_void;
+}
+
+/// Win11：DWMWA_WINDOW_CORNER_PREFERENCE(33) = DWMWCP_ROUND(2)。
+/// 无边框（置顶）模式下 DWM 可能给出直角，显式设置保持圆角。
+fn force_rounded_corners() {
+    let title: Vec<u16> = "计算器".encode_utf16().chain(std::iter::once(0)).collect();
+    unsafe {
+        let hwnd = FindWindowW(std::ptr::null(), title.as_ptr());
+        if !hwnd.is_null() {
+            let pref: u32 = 2;
+            let _ = DwmSetWindowAttribute(hwnd, 33, &pref, 4);
+        }
+    }
+}
 
 /// 仿原版：按文本长度缩放结果行字号，避免截断（近似字宽 0.62em，可用宽约 330px）
 fn fit_font(text: &str) -> f32 {
@@ -110,7 +139,39 @@ fn main() {
             .args(["/C", "start", "", &url.to_string()])
             .spawn();
     });
+    let close_weak = ui.as_weak();
+    ui.on_close_requested(move || {
+        // 先 hide 让窗口立即消失，再请求退出事件循环，确保进程正常结束
+        if let Some(ui) = close_weak.upgrade() {
+            let _ = ui.window().hide();
+        }
+        let _ = slint::quit_event_loop();
+    });
+    // 切换 no-frame 后窗口样式会重建：①圆角偏好要重新施加；②winit 不发 resize 事件，
+    // 布局/渲染停留在旧状态（要手动拖边框才恢复）。用物理尺寸做两步微扰：
+    // 先放大 2px、隔一拍再还原，强制两次真实的 WM_SIZE（同一帧内改了又改会被合并，无效）。
+    let pin_weak = ui.as_weak();
+    ui.on_pin_toggled(move || {
+        force_rounded_corners();
+        let weak = pin_weak.clone();
+        slint::Timer::single_shot(std::time::Duration::from_millis(120), move || {
+            force_rounded_corners();
+            let Some(ui) = weak.upgrade() else { return };
+            let win = ui.window();
+            let s = win.size();
+            win.set_size(slint::PhysicalSize::new(s.width + 2, s.height + 2));
+            let weak2 = weak.clone();
+            slint::Timer::single_shot(std::time::Duration::from_millis(120), move || {
+                if let Some(ui) = weak2.upgrade() {
+                    let win = ui.window();
+                    let s = win.size();
+                    win.set_size(slint::PhysicalSize::new(s.width - 2, s.height - 2));
+                }
+            });
+        });
+    });
 
+    force_rounded_corners();
     ctx.sync(&app.borrow());
     ui.run().unwrap();
 }

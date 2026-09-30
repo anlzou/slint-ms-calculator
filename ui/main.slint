@@ -17,6 +17,11 @@ struct KeyDef {
 export component MainWindow inherits Window {
     title: "计算器";
     background: Theme.window;
+    // 置顶模式：隐藏标题栏（去掉三个窗口按钮）+ 恒在最前，窗口大小不变
+    no-frame: root.pinned;
+    always-on-top: root.pinned;
+    // 无边框模式下窗口四缘留出拖拽带，可用边缘放大缩小（winit 后端）
+    resize-border-width: root.pinned ? 8px : 0px;
     preferred-width: 380px;
     preferred-height: 580px;
     min-width: 320px;
@@ -34,11 +39,20 @@ export component MainWindow inherits Window {
     callback history-clear();
     callback theme-mode-changed(int);
     callback open-link(string);
+    callback close-requested();
+    // 仅用于通知 Rust 端重新施加 DWM 圆角偏好
+    callback pin-toggled();
+
+    // 保持在顶部：无边框 + 恒在最前（窗口尺寸不变），置顶模式带关闭按钮
+    in-out property <bool> pinned: false;
 
     // ≡ 模式菜单浮层 / 时钟图标历史面板（回调内赋值用 =，属性名不带连字符以避开解析歧义）
     private property <bool> drawer: false;
     private property <bool> hist: false;
     private property <bool> settings-open: false;
+
+    // 置顶或菜单展开时收起 ≡/标准：图钉自动滑到最左上角
+    private property <bool> chrome-hidden: root.pinned || root.drawer;
 
     private property <[KeyDef]> keys: [
         { text: "%", code: "percent", accent: false, num: false },
@@ -80,16 +94,21 @@ export component MainWindow inherits Window {
 
         VerticalLayout {
             padding: 6px;
+            // 置顶模式：图钉贴左/上边缘 4px，与右上角关闭按钮到边框的距离一致
+            padding-left: root.pinned ? 4px : 6px;
+            padding-top: root.pinned ? 4px : 6px;
             spacing: 6px;
 
-            // 顶栏：≡ 开合历史面板 + 模式标题
+            // 顶栏：≡/标准/图钉 等宽单元格 + 等距；置顶或菜单展开时 ≡/标准 折叠，图钉滑到最左上角
             HorizontalLayout {
                 min-height: 28px;
-                spacing: 4px;
+                spacing: root.chrome-hidden ? 0px : 4px;
 
                 Rectangle {
-                    min-width: 34px;
-                    min-height: 26px;
+                    visible: !root.chrome-hidden;
+                    min-width: root.chrome-hidden ? 0px : 34px;
+                    max-width: root.chrome-hidden ? 0px : 34px;
+                    min-height: root.chrome-hidden ? 0px : 26px;
                     menu-ta := TouchArea {
                         clicked => { root.drawer = !root.drawer; }
                     }
@@ -106,15 +125,64 @@ export component MainWindow inherits Window {
                     }
                 }
 
+                // 「标准」：Slint 布局中 visible:false 仍占位，须用 min/max-width 归零折叠
                 Text {
+                    visible: !root.chrome-hidden;
+                    min-width: root.chrome-hidden ? 0px : 30px;
+                    max-width: root.chrome-hidden ? 0px : 30px;
                     text: "标准";
                     color: Theme.text-primary;
                     font-size: 13px;
                     font-weight: 600;
+                    horizontal-alignment: center;
                     vertical-alignment: center;
                 }
 
-                Rectangle { horizontal-stretch: 1; }
+                // 保持在顶部（图钉手绘，避免字形缺失）：切换全屏置顶，高度同 ≡，宽度收紧
+                Rectangle {
+                    min-width: 26px;
+                    max-width: 26px;
+                    min-height: 26px;
+                    pin-ta := TouchArea {
+                        clicked => {
+                            root.pinned = !root.pinned;
+                            root.pin-toggled();
+                        }
+                    }
+                    Rectangle {
+                        background: pin-ta.has-hover ? Theme.key-hover : transparent;
+                        border-radius: Theme.radius;
+                    }
+                    // 图钉图标始终在格子中居中
+                    Rectangle {
+                        x: parent.width / 2 - 5px;
+                        y: parent.height / 2 - 6px;
+                        width: 10px;
+                        height: 2px;
+                        border-radius: 1px;
+                        background: root.pinned ? Theme.accent : Theme.text-primary;
+                    }
+                    Rectangle {
+                        x: parent.width / 2 - 3px;
+                        y: parent.height / 2 - 4px;
+                        width: 6px;
+                        height: 4px;
+                        background: root.pinned ? Theme.accent : Theme.text-primary;
+                    }
+                    Rectangle {
+                        x: parent.width / 2 - 1px;
+                        y: parent.height / 2;
+                        width: 2px;
+                        height: 5px;
+                        background: root.pinned ? Theme.accent : Theme.text-primary;
+                    }
+                }
+
+                // 顶栏空白区：置顶模式下可按住拖动窗口（普通点击不移动，按钮不受影响）
+                WindowMoveArea {
+                    enabled: root.pinned;
+                    horizontal-stretch: 1;
+                }
             }
 
             DisplayArea {
@@ -152,6 +220,7 @@ export component MainWindow inherits Window {
 
     // 时钟图标：绝对定位钉在窗口右上角，打开/关闭历史面板（声明在遮罩之前，菜单打开时会被盖住）
     Rectangle {
+        visible: !root.pinned;
         x: root.width - 40px;
         y: 4px;
         width: 36px;
@@ -174,6 +243,30 @@ export component MainWindow inherits Window {
         }
         Rectangle { x: parent.width / 2 - 0.6px; y: parent.height / 2 - 5px; width: 1.2px; height: 5.5px; background: Theme.text-primary; }
         Rectangle { x: parent.width / 2 - 0.6px; y: parent.height / 2 - 0.6px; width: 4.5px; height: 1.2px; background: Theme.text-primary; }
+    }
+
+    // 置顶模式的关闭按钮：右上角（无边框后替代系统 X）
+    Rectangle {
+        visible: root.pinned;
+        x: root.width - 40px;
+        y: 4px;
+        width: 36px;
+        height: 28px;
+        close-ta := TouchArea {
+            clicked => { root.close-requested(); }
+        }
+        Rectangle {
+            background: close-ta.has-hover ? #c42b1c : transparent;
+            border-radius: Theme.radius;
+        }
+        // 关闭符号用文本 ×：Text 默认铺满父 Rectangle，天然居中，不会跑出按钮格
+        Text {
+            text: "×";
+            color: close-ta.has-hover ? #ffffff : Theme.text-primary;
+            font-size: 26px;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
     }
 
     // ≡ 菜单：半透明遮罩 + 左侧浮层，点遮罩收起
