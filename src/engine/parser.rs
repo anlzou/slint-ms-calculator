@@ -37,8 +37,10 @@ pub fn normalize(toks: &[Tok]) -> Vec<Tok> {
     }
     let mut out: Vec<Tok> = Vec::with_capacity(toks.len());
     for t in toks {
-        if let Tok::Bin(_) = t {
-            if matches!(out.last(), Some(Tok::Bin(_))) {
+        if let Tok::Bin(op) = t {
+            let keep_sign = matches!(out.last(), Some(Tok::Bin(prev))
+                if prev.takes_signed_operand() && matches!(op, Op::Add | Op::Sub));
+            if matches!(out.last(), Some(Tok::Bin(_))) && !keep_sign {
                 out.pop();
             }
         }
@@ -87,6 +89,7 @@ impl<'a> Parser<'a> {
             let op = match self.peek() {
                 Some(Tok::Bin(Op::Mul)) => Op::Mul,
                 Some(Tok::Bin(Op::Div)) => Op::Div,
+                Some(Tok::Bin(Op::Mod)) => Op::Mod,
                 _ => break,
             };
             self.i += 1;
@@ -103,7 +106,31 @@ impl<'a> Parser<'a> {
         if self.eat_bin(Op::Add) {
             return self.unary();
         }
-        self.postfix()
+        self.power()
+    }
+
+    /// 幂/根：优先级高于乘除；底数取 postfix 后右结合递归，
+    /// 因此 -2^2 = -(2^2) = -4，2^3^2 = 2^(3^2) = 512，同科学型约定。
+    fn power(&mut self) -> Result<Expr, CalcError> {
+        let base = self.postfix()?;
+        if let Some(Tok::Bin(op)) = self.peek() {
+            if op.is_power() {
+                self.i += 1;
+                let rhs = self.power_exp()?;
+                return Ok(Expr::Bin { op, lhs: Box::new(base), rhs: Box::new(rhs) });
+            }
+        }
+        Ok(base)
+    }
+
+    fn power_exp(&mut self) -> Result<Expr, CalcError> {
+        if self.eat_bin(Op::Sub) {
+            return Ok(Expr::Neg(Box::new(self.power_exp()?)));
+        }
+        if self.eat_bin(Op::Add) {
+            return self.power_exp();
+        }
+        self.power()
     }
 
     fn postfix(&mut self) -> Result<Expr, CalcError> {

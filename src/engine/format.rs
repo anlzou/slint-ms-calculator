@@ -99,7 +99,7 @@ pub fn expression_to_display(toks: &[Tok]) -> String {
             }
             Tok::Percent => out.push('%'),
             Tok::LParen => {
-                if !out.is_empty() && !out.ends_with('(') {
+                if !out.is_empty() && !out.ends_with('(') && !out.ends_with(' ') {
                     out.push(' ');
                 }
                 out.push('(');

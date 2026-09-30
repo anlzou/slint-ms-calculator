@@ -5,6 +5,8 @@ export component KeypadKey inherits Rectangle {
     in property <string> code;
     in property <bool> accent: false;
     in property <bool> num: false;
+    /// 锁定高亮（科学型 2nd 键），同按下底色
+    in property <bool> active: false;
     callback clicked(string);
 
     min-height: 46px;
@@ -15,7 +17,7 @@ export component KeypadKey inherits Rectangle {
     Rectangle {
         background: root.accent
             ? (root.pressed ? Theme.accent-pressed : (ta.has-hover ? Theme.accent-hover : Theme.accent))
-            : (root.pressed ? Theme.key-pressed : (ta.has-hover ? Theme.key-hover : (root.num ? Theme.key-bg-num : Theme.key-bg)));
+            : ((root.pressed || root.active) ? Theme.key-pressed : (ta.has-hover ? Theme.key-hover : (root.num ? Theme.key-bg-num : Theme.key-bg)));
         border-radius: Theme.radius;
         border-width: 1px;
         border-color: root.accent ? Theme.accent : Theme.border;

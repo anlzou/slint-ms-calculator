@@ -6,6 +6,14 @@ pub enum Op {
     Sub,
     Mul,
     Div,
+    /// x 的 y 次幂
+    Pow,
+    /// lhs 次方根 of rhs（"3 ʸ√x 8" = 2）
+    Root,
+    /// 取余（截断语义，符号跟随被除数）
+    Mod,
+    /// 科学记数法 E 记法：lhs × 10^rhs（"2 exp 3" = 2E3 = 2000）
+    Exp,
 }
 
 impl Op {
@@ -15,7 +23,21 @@ impl Op {
             Op::Sub => "-",
             Op::Mul => "×",
             Op::Div => "÷",
+            Op::Pow => "^",
+            Op::Root => "ʸ√x",
+            Op::Mod => "mod",
+            Op::Exp => "E",
         }
+    }
+
+    /// 幂/根/exp：优先级高于乘除、右结合
+    pub fn is_power(self) -> bool {
+        matches!(self, Op::Pow | Op::Root | Op::Exp)
+    }
+
+    /// 这些运算符之后的 +/- 视作下一操作数的正负号，而非替换运算符
+    pub fn takes_signed_operand(self) -> bool {
+        matches!(self, Op::Pow | Op::Root | Op::Mod | Op::Exp)
     }
 }
 
@@ -67,6 +89,10 @@ pub fn tokenize(s: &str) -> Result<Vec<Tok>, &'static str> {
             }
             '/' => {
                 toks.push(Tok::Bin(Op::Div));
+                i += 1;
+            }
+            '^' => {
+                toks.push(Tok::Bin(Op::Pow));
                 i += 1;
             }
             '%' => {

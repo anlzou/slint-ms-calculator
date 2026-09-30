@@ -1,0 +1,245 @@
+import { Theme } from "theme.slint";
+import { KeypadKey } from "keypad.slint";
+
+struct SciKey {
+    text: string,
+    code: string,
+    num: bool,
+    accent: bool,
+    active: bool,
+    // true = 点击不收起浮层（2nd / hyp 开关）
+    sticky: bool,
+}
+
+/// 科学型键盘（Win11 风格分组）：主网格 5 列 x 7 行，
+/// 三角学浮层自带 2nd/hyp 开关（12 个三角/双曲函数），函数浮层放 |x|/取整/随机/度分秒换算。
+/// 2nd 同时把网格 x²/ʸ√x/10ˣ 原位变换为 x³/³√x/2ˣ（同原版）。
+export component ScientificKeypad inherits Rectangle {
+    in property <string> angle-label: "DEG";
+    in property <bool> second-active: false;
+    callback key-pressed(string);
+
+    // 0=收起 1=三角学 2=函数（in-out：主窗口显示区的点外遮罩也要复位它）
+    in-out property <int> menu-open: 0;
+    // 三角学浮层内的双曲族开关（纯 UI 状态，决定发送 sin 还是 sinh 等）
+    property <bool> hyp: false;
+
+    // hyp 开关时函数名加 h 后缀（sin→sinh…），2nd 加 ⁻¹ 后缀
+    private property <string> hs: root.hyp ? "h" : "";
+    private property <string> inv: root.second-active ? "⁻¹" : "";
+
+    private property <[SciKey]> keys: [
+        { text: "2nd", code: "second", num: false, accent: false, active: root.second-active, sticky: false },
+        { text: "π", code: "pi", num: false, accent: false, active: false, sticky: false },
+        { text: "e", code: "e", num: false, accent: false, active: false, sticky: false },
+        { text: "C", code: "clear", num: false, accent: false, active: false, sticky: false },
+        { text: "←", code: "backspace", num: false, accent: false, active: false, sticky: false },
+
+        { text: root.second-active ? "x³" : "x²", code: root.second-active ? "cube" : "square", num: false, accent: false, active: false, sticky: false },
+        { text: "1/x", code: "inv", num: false, accent: false, active: false, sticky: false },
+        { text: "|x|", code: "abs", num: false, accent: false, active: false, sticky: false },
+        { text: "exp", code: "exp", num: false, accent: false, active: false, sticky: false },
+        { text: "mod", code: "mod", num: false, accent: false, active: false, sticky: false },
+
+        { text: root.second-active ? "³√x" : "²√x", code: root.second-active ? "cbrt" : "sqrt", num: false, accent: false, active: false, sticky: false },
+        { text: "(", code: "(", num: false, accent: false, active: false, sticky: false },
+        { text: ")", code: ")", num: false, accent: false, active: false, sticky: false },
+        { text: "n!", code: "fact", num: false, accent: false, active: false, sticky: false },
+        { text: "÷", code: "/", num: false, accent: false, active: false, sticky: false },
+
+        { text: root.second-active ? "ʸ√x" : "xʸ", code: root.second-active ? "root" : "pow", num: false, accent: false, active: false, sticky: false },
+        { text: "7", code: "7", num: true, accent: false, active: false, sticky: false },
+        { text: "8", code: "8", num: true, accent: false, active: false, sticky: false },
+        { text: "9", code: "9", num: true, accent: false, active: false, sticky: false },
+        { text: "×", code: "*", num: false, accent: false, active: false, sticky: false },
+
+        { text: root.second-active ? "2ˣ" : "10ˣ", code: root.second-active ? "twopow" : "tenpow", num: false, accent: false, active: false, sticky: false },
+        { text: "4", code: "4", num: true, accent: false, active: false, sticky: false },
+        { text: "5", code: "5", num: true, accent: false, active: false, sticky: false },
+        { text: "6", code: "6", num: true, accent: false, active: false, sticky: false },
+        { text: "-", code: "-", num: false, accent: false, active: false, sticky: false },
+
+        { text: "log", code: "log", num: false, accent: false, active: false, sticky: false },
+        { text: "1", code: "1", num: true, accent: false, active: false, sticky: false },
+        { text: "2", code: "2", num: true, accent: false, active: false, sticky: false },
+        { text: "3", code: "3", num: true, accent: false, active: false, sticky: false },
+        { text: "+", code: "+", num: false, accent: false, active: false, sticky: false },
+
+        { text: "ln", code: "ln", num: false, accent: false, active: false, sticky: false },
+        { text: "±", code: "negate", num: true, accent: false, active: false, sticky: false },
+        { text: "0", code: "0", num: true, accent: false, active: false, sticky: false },
+        { text: ".", code: ".", num: true, accent: false, active: false, sticky: false },
+        { text: "=", code: "=", num: false, accent: true, active: false, sticky: false },
+    ];
+
+    // 三角学浮层（4 列 x 2 行）：2nd/hyp 为开关格不收起；2nd 加 ⁻¹，hyp 切双曲族
+    private property <[SciKey]> trig-keys: [
+        { text: "2nd", code: "second", num: false, accent: false, active: root.second-active, sticky: true },
+        { text: "sin" + root.hs + root.inv, code: "sin" + root.hs, num: false, accent: false, active: false, sticky: false },
+        { text: "cos" + root.hs + root.inv, code: "cos" + root.hs, num: false, accent: false, active: false, sticky: false },
+        { text: "tan" + root.hs + root.inv, code: "tan" + root.hs, num: false, accent: false, active: false, sticky: false },
+
+        { text: "hyp", code: "hyp", num: false, accent: false, active: root.hyp, sticky: true },
+        { text: "sec" + root.hs + root.inv, code: "sec" + root.hs, num: false, accent: false, active: false, sticky: false },
+        { text: "csc" + root.hs + root.inv, code: "csc" + root.hs, num: false, accent: false, active: false, sticky: false },
+        { text: "cot" + root.hs + root.inv, code: "cot" + root.hs, num: false, accent: false, active: false, sticky: false },
+    ];
+
+    // 函数浮层（3 列 x 2 行）：同原版 |x| ⌊x ⌈x⌉ / rand →dms →deg
+    private property <[SciKey]> fn-keys: [
+        { text: "|x|", code: "abs", num: false, accent: false, active: false, sticky: false },
+        { text: "floor", code: "floor", num: false, accent: false, active: false, sticky: false },
+        { text: "ceil", code: "ceil", num: false, accent: false, active: false, sticky: false },
+        { text: "rand", code: "rand", num: false, accent: false, active: false, sticky: false },
+        { text: "dms", code: "todms", num: false, accent: false, active: false, sticky: false },
+        { text: "deg", code: "todeg", num: false, accent: false, active: false, sticky: false },
+    ];
+
+    VerticalLayout {
+        spacing: 4px;
+
+        // 分组下拉行：三角学 / 函数
+        HorizontalLayout {
+            min-height: 26px;
+            spacing: 4px;
+
+            trig-btn := Rectangle {
+                ta := TouchArea {
+                    clicked => { root.menu-open = root.menu-open == 1 ? 0 : 1; }
+                }
+                Rectangle {
+                    background: ta.pressed ? Theme.key-pressed : (ta.has-hover ? Theme.key-hover : transparent);
+                    border-radius: Theme.radius;
+                }
+                HorizontalLayout {
+                    padding-left: 8px;
+                    padding-right: 8px;
+                    alignment: center;
+                    Text {
+                        text: "三角学 " + (root.menu-open == 1 ? "🔼" : "🔽");
+                        color: Theme.text-primary;
+                        font-size: 12px;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+
+            fn-btn := Rectangle {
+                ta2 := TouchArea {
+                    clicked => { root.menu-open = root.menu-open == 2 ? 0 : 2; }
+                }
+                Rectangle {
+                    background: ta2.pressed ? Theme.key-pressed : (ta2.has-hover ? Theme.key-hover : transparent);
+                    border-radius: Theme.radius;
+                }
+                HorizontalLayout {
+                    padding-left: 8px;
+                    padding-right: 8px;
+                    alignment: center;
+                    Text {
+                        text: "函数 " + (root.menu-open == 2 ? "🔼" : "🔽");
+                        color: Theme.text-primary;
+                        font-size: 12px;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+
+            Rectangle { horizontal-stretch: 1; }
+        }
+
+        // 主网格：5 列 x 7 行
+        GridLayout {
+            spacing: 4px;
+            for k[i] in root.keys: KeypadKey {
+                row: i / 5;
+                col: Math.mod(i, 5);
+                text: k.text;
+                code: k.code;
+                num: k.num;
+                accent: k.accent;
+                active: k.active;
+                clicked(code) => { root.key-pressed(code); }
+            }
+        }
+    }
+
+    // 浮层外点击收起（不盖住分组行，分组按钮可直接互切）
+    Rectangle {
+        visible: root.menu-open != 0;
+        x: 0px;
+        y: 30px;
+        width: root.width;
+        height: root.height - 30px;
+        TouchArea {
+            clicked => { root.menu-open = 0; }
+        }
+    }
+
+    // 三角学浮层（2 行 4 列）
+    if root.menu-open == 1: Rectangle {
+        x: 0px;
+        y: 32px;
+        width: 340px;
+        height: 106px;
+        background: Theme.card;
+        border-radius: 8px;
+        border-width: 1px;
+        border-color: Theme.border;
+
+        GridLayout {
+            x: 5px;
+            y: 5px;
+            width: parent.width - 10px;
+            height: parent.height - 10px;
+            spacing: 4px;
+            for k[i] in root.trig-keys: KeypadKey {
+                row: i / 4;
+                col: Math.mod(i, 4);
+                text: k.text;
+                code: k.code;
+                active: k.active;
+                clicked(code) => {
+                    if code == "hyp" {
+                        root.hyp = !root.hyp;
+                    } else if !k.sticky {
+                        root.menu-open = 0;
+                        root.key-pressed(code);
+                    } else {
+                        root.key-pressed(code); // 2nd：浮层保持打开
+                    }
+                }
+            }
+        }
+    }
+
+    // 函数浮层（2 行 3 列）
+    if root.menu-open == 2: Rectangle {
+        x: 92px;
+        y: 32px;
+        width: 262px;
+        height: 106px;
+        background: Theme.card;
+        border-radius: 8px;
+        border-color: Theme.border;
+        border-width: 1px;
+
+        GridLayout {
+            x: 5px;
+            y: 5px;
+            width: parent.width - 10px;
+            height: parent.height - 10px;
+            spacing: 4px;
+            for k[i] in root.fn-keys: KeypadKey {
+                row: i / 3;
+                col: Math.mod(i, 3);
+                text: k.text;
+                code: k.code;
+                clicked(code) => {
+                    root.menu-open = 0;
+                    root.key-pressed(code);
+                }
+            }
+        }
+    }
+}

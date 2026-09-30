@@ -6,6 +6,7 @@ import { KeypadKey } from "keypad.slint";
 import { MemoryBar } from "memory.slint";
 import { HistoryPanel, HistoryItem, ModeMenu } from "history.slint";
 import { SettingsPage } from "settings.slint";
+import { ScientificKeypad } from "scientific.slint";
 
 struct KeyDef {
     text: string,
@@ -25,15 +26,20 @@ export component MainWindow inherits Window {
     // 无边框模式下窗口四缘留出拖拽带，可用边缘放大缩小（winit 后端）
     resize-border-width: root.pinned ? 8px : 0px;
     preferred-width: 380px;
-    preferred-height: 580px;
+    // 科学键盘多 1 行 + 分组下拉行，模式切换时窗口偏好高度随之变化
+    preferred-height: root.sci-mode ? 620px : 580px;
     min-width: 320px;
-    min-height: 480px;
+    min-height: root.sci-mode ? 520px : 480px;
 
     in property <string> expression-text;
     in property <string> result-text: "0";
     in property <bool> memory-busy;
     in property <float> result-font: 34;
     in property <[HistoryItem]> history;
+    // 科学型状态回显：Rust sync 按 App 写入
+    in-out property <bool> sci-mode: false;
+    in-out property <string> angle-label: "DEG";
+    in-out property <bool> second-active: false;
     // 0=浅色 1=深色 2=跟随系统（Rust 读 get_theme_mode 计算 Theme.dark）
     in-out property <int> theme-mode: 2;
     callback key(string);
@@ -52,6 +58,8 @@ export component MainWindow inherits Window {
     private property <bool> drawer: false;
     private property <bool> hist: false;
     private property <bool> settings-open: false;
+    // 科学键盘分组浮层状态（0=收起 1=三角学 2=函数）：条件元素内的 id 外部不可达，提升到根
+    private property <int> sci-menu: 0;
 
     // 置顶或菜单展开时收起 ≡/标准：图钉自动滑到最左上角
     private property <bool> chrome-hidden: root.pinned || root.drawer;
@@ -127,12 +135,12 @@ export component MainWindow inherits Window {
                     }
                 }
 
-                // 「标准」：Slint 布局中 visible:false 仍占位，须用 min/max-width 归零折叠
+                // 「标准/科学」：Slint 布局中 visible:false 仍占位，须用 min/max-width 归零折叠
                 Text {
                     visible: !root.chrome-hidden;
                     min-width: root.chrome-hidden ? 0px : 30px;
                     max-width: root.chrome-hidden ? 0px : 30px;
-                    text: "标准";
+                    text: root.sci-mode ? "科学" : "标准";
                     color: Theme.text-primary;
                     font-size: 13px;
                     font-weight: 600;
@@ -171,10 +179,39 @@ export component MainWindow inherits Window {
                 }
             }
 
-            DisplayArea {
-                expression-text: root.expression-text;
-                result-text: root.result-text;
-                result-font: root.result-font;
+            // 显示区：科学浮层打开时点这里也收起浮层（浮层不覆盖此区域，遮罩不会挡住浮层点击）
+            Rectangle {
+                vertical-stretch: 1;
+                min-height: 96px;
+                DisplayArea {
+                    expression-text: root.expression-text;
+                    result-text: root.result-text;
+                    result-font: root.result-font;
+                }
+                // DEG/RAD 芯片：同原版放在显示屏左上角（声明在收起遮罩前，浮层打开时点击先收起）
+                if root.sci-mode: Rectangle {
+                    x: 6px;
+                    y: 4px;
+                    width: 46px;
+                    height: 24px;
+                    border-radius: Theme.radius;
+                    border-width: 1px;
+                    border-color: Theme.border;
+                    background: deg-ta.has-hover ? Theme.key-hover : Theme.card;
+                    deg-ta := TouchArea {
+                        clicked => { root.key(root.angle-label == "DEG" ? "rad" : "deg"); }
+                    }
+                    Text {
+                        text: root.angle-label;
+                        color: Theme.text-primary;
+                        font-size: 12px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+                if root.sci-mode && root.sci-menu != 0: TouchArea {
+                    clicked => { root.sci-menu = 0; }
+                }
             }
 
             MemoryBar {
@@ -189,7 +226,7 @@ export component MainWindow inherits Window {
                 recall(i) => { root.history-recall(i); }
                 cleared => { root.history-clear(); }
             }
-            if !root.hist: GridLayout {
+            if !root.hist && !root.sci-mode: GridLayout {
                 spacing: 4px;
                 for k[index] in root.keys: KeypadKey {
                     row: index / 4;
@@ -200,6 +237,12 @@ export component MainWindow inherits Window {
                     num: k.num;
                     clicked(code) => { root.key(code); }
                 }
+            }
+            if !root.hist && root.sci-mode: ScientificKeypad {
+                menu-open <=> root.sci-menu;
+                angle-label: root.angle-label;
+                second-active: root.second-active;
+                key-pressed(code) => { root.key(code); }
             }
         }
     }
@@ -269,7 +312,14 @@ export component MainWindow inherits Window {
         y: 0px;
         width: 240px;
         height: root.height;
-        picked => { root.drawer = false; }
+        current-mode: root.sci-mode ? 1 : 0;
+        picked(idx) => {
+            root.drawer = false;
+            // 0=标准 1=科学，-1 为未实现模式（仅收起）
+            if idx >= 0 {
+                root.key(idx == 1 ? "scientific" : "standard");
+            }
+        }
         settings => { root.drawer = false; root.settings-open = true; }
     }
 

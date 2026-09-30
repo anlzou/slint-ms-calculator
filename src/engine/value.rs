@@ -95,6 +95,31 @@ impl Rational {
             None
         }
     }
+
+    /// 整数次幂（负指数取倒数）；超出能力时返回 None 由调用方降级 f64。
+    pub fn pow_i(self, e: i128) -> Option<Self> {
+        if e < 0 && self.num == 0 {
+            return None;
+        }
+        let e_abs = e.unsigned_abs();
+        if e_abs > 10_000 {
+            return None;
+        }
+        let e_abs = e_abs as u32;
+        let (bn, bd) = if e >= 0 {
+            (self.num, self.den)
+        } else {
+            (self.den, self.num)
+        };
+        let n_pow = bn.abs().checked_pow(e_abs)?;
+        let n = if bn < 0 && e_abs % 2 == 1 {
+            n_pow.checked_neg()?
+        } else {
+            n_pow
+        };
+        let d = bd.checked_pow(e_abs)?;
+        Self::new(n, d)
+    }
 }
 
 /// 计算值：能精确表示时用 Rational（0.1+0.2=0.3），溢出时降级 f64。
@@ -203,6 +228,22 @@ impl Value {
     pub fn percent(self) -> Value {
         self.div(Value::from_int(100))
     }
+
+    /// 整数次幂；Exact 走有理数精确路径，Approx 或溢出时降级 f64。
+    pub fn pow_i(self, e: i128) -> Option<Value> {
+        match self {
+            Value::Exact(r) => r.pow_i(e).map(Value::Exact),
+            Value::Approx(_) => None,
+        }
+    }
+
+    pub fn abs(self) -> Value {
+        match self {
+            Value::Exact(r) if r.num < 0 => Value::Exact(r.neg()),
+            Value::Approx(f) if f < 0.0 => Value::Approx(-f),
+            other => other,
+        }
+    }
 }
 
 /// 十进制字面量转精确值；超出 i128 能力时降级 f64。
@@ -230,4 +271,44 @@ pub fn value_from_str(s: &str) -> Value {
         }
         Err(_) => Value::Approx(s.parse::<f64>().unwrap_or(0.0)),
     }
+}
+
+/// 超越函数结果贴近整数/短小数时取整（sin(180°)=1.2e-16→0，sin(30°)=0.4999…4→0.5），
+/// 消去浮点尾巴，同 Windows 展示。
+pub fn snap_value(f: f64) -> Value {
+    if !f.is_finite() || f.abs() >= 1e16 {
+        return Value::Approx(f);
+    }
+    for d in 0..=3i32 {
+        let m = 10f64.powi(d);
+        let scaled = (f * m).round();
+        if (f - scaled / m).abs() < 1e-12 {
+            if d == 0 {
+                return Value::from_int(scaled as i128);
+            }
+            if let Some(r) = Rational::new(scaled as i128, m as i128) {
+                return Value::Exact(r);
+            }
+            return Value::Approx(scaled / m);
+        }
+    }
+    Value::Approx(f)
+}
+
+/// [0,1) 伪随机数（xorshift64*，时钟播种），供 rand 键使用。
+pub fn value_rand() -> Value {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos() as u64)
+        .unwrap_or(0x2545_F491_4F6C_DD1D);
+    let mut x = nanos ^ (nanos >> 32) ^ 0x9E37_79B9_7F4A_7C15;
+    if x == 0 {
+        x = 0x853C_49E6_748F_EA9B;
+    }
+    x ^= x >> 12;
+    x ^= x << 25;
+    x ^= x >> 27;
+    let r = x.wrapping_mul(0x2545_F491_4F6C_DD1D);
+    Value::Approx((r >> 11) as f64 / (1u64 << 53) as f64)
 }

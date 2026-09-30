@@ -1,6 +1,6 @@
 use slint_ms_calculator::engine::{
-    apply_unary, error_message, evaluate, expression_to_display, format, tokenize,
-    value_to_display, CalcError, Op, Tok, UnaryOp, Value,
+    apply_unary, apply_unary_in, error_message, evaluate, expression_to_display, format,
+    tokenize, value_from_str, value_to_display, AngleMode, CalcError, Op, Tok, UnaryOp, Value,
 };
 
 fn ev(expr: &str) -> Result<Value, CalcError> {
@@ -124,4 +124,154 @@ fn token_helpers_roundtrip() {
         .collect::<Vec<_>>();
     assert_eq!(toks.len(), 9);
     assert_eq!(toks[4], Tok::Bin(Op::Sub));
+}
+
+#[test]
+fn power_operator() {
+    assert_eq!(disp("2^10"), "1,024");
+    assert_eq!(disp("2^3^2"), "512"); // 右结合：2^(3^2)
+    assert_eq!(disp("-2^2"), "-4"); // 一元负号优先级低于 ^
+    assert_eq!(disp("2^-3"), "0.125");
+    assert_eq!(disp("2^0"), "1");
+    assert_eq!(disp("0^0"), "1");
+    assert_eq!(disp("4^0.5"), "2");
+    assert_eq!(disp("2^"), "2"); // 尾部悬空 ^ 按 = 时丢弃
+    assert_eq!(
+        expression_to_display(&tokenize("2^10").unwrap()),
+        "2 ^ 10"
+    );
+}
+
+fn bin_eval(a: i128, op: Op, b: &str) -> Result<Value, CalcError> {
+    let toks = vec![
+        Tok::Num(Value::from_int(a)),
+        Tok::Bin(op),
+        Tok::Num(value_from_str(b)),
+    ];
+    evaluate(&toks)
+}
+
+#[test]
+fn root_operator() {
+    assert_eq!(value_to_display(&bin_eval(3, Op::Root, "8").unwrap()), "2");
+    assert_eq!(value_to_display(&bin_eval(2, Op::Root, "9").unwrap()), "3");
+    assert_eq!(value_to_display(&bin_eval(3, Op::Root, "-8").unwrap()), "-2");
+    assert_eq!(bin_eval(2, Op::Root, "-4"), Err(CalcError::InvalidInput)); // 负数偶次根
+    assert_eq!(bin_eval(0, Op::Root, "8"), Err(CalcError::DivideByZero));
+}
+
+#[test]
+fn mod_operator() {
+    assert_eq!(value_to_display(&bin_eval(5, Op::Mod, "2").unwrap()), "1");
+    assert_eq!(
+        value_to_display(&bin_eval(-5, Op::Mod, "2").unwrap()),
+        "-1"
+    ); // 符号跟随被除数
+    assert_eq!(bin_eval(5, Op::Mod, "0"), Err(CalcError::DivideByZero));
+}
+
+fn trig(angle: AngleMode, op: UnaryOp, x: &str) -> Result<Value, CalcError> {
+    apply_unary_in(angle, op, value_from_str(x))
+}
+
+#[test]
+fn trig_deg_rad() {
+    assert_eq!(value_to_display(&trig(AngleMode::Deg, UnaryOp::Sin, "30").unwrap()), "0.5");
+    assert_eq!(value_to_display(&trig(AngleMode::Deg, UnaryOp::Cos, "60").unwrap()), "0.5");
+    assert_eq!(value_to_display(&trig(AngleMode::Deg, UnaryOp::Tan, "45").unwrap()), "1");
+    assert_eq!(
+        value_to_display(&trig(AngleMode::Deg, UnaryOp::Sin, "180").unwrap()),
+        "0"
+    ); // 快照消去 1.2e-16 浮点尾巴
+    assert_eq!(value_to_display(&trig(AngleMode::Rad, UnaryOp::Cos, "0").unwrap()), "1");
+    assert_eq!(
+        value_to_display(&trig(AngleMode::Deg, UnaryOp::Asin, "0.5").unwrap()),
+        "30"
+    );
+    assert_eq!(trig(AngleMode::Deg, UnaryOp::Asin, "2"), Err(CalcError::InvalidInput));
+    assert_eq!(trig(AngleMode::Deg, UnaryOp::Acos, "-2"), Err(CalcError::InvalidInput));
+}
+
+#[test]
+fn logs_and_exponentials() {
+    assert_eq!(value_to_display(&trig(AngleMode::Deg, UnaryOp::Log, "100").unwrap()), "2");
+    assert_eq!(value_to_display(&trig(AngleMode::Deg, UnaryOp::Log, "1000").unwrap()), "3");
+    assert_eq!(value_to_display(&trig(AngleMode::Deg, UnaryOp::Ln, "1").unwrap()), "0");
+    assert_eq!(trig(AngleMode::Deg, UnaryOp::Ln, "0"), Err(CalcError::InvalidInput));
+    assert_eq!(trig(AngleMode::Deg, UnaryOp::Log, "-5"), Err(CalcError::InvalidInput));
+    assert_eq!(
+        value_to_display(&apply_unary(UnaryOp::TenPow, Value::from_int(3)).unwrap()),
+        "1,000"
+    );
+    assert_eq!(
+        value_to_display(&apply_unary(UnaryOp::TwoPow, Value::from_int(10)).unwrap()),
+        "1,024"
+    );
+    assert_eq!(
+        value_to_display(&apply_unary(UnaryOp::TenPow, Value::from_int(-2)).unwrap()),
+        "0.01"
+    );
+}
+
+#[test]
+fn factorial_abs_cbrt() {
+    assert_eq!(value_to_display(&apply_unary(UnaryOp::Factorial, Value::from_int(5)).unwrap()), "120");
+    assert_eq!(value_to_display(&apply_unary(UnaryOp::Factorial, Value::from_int(0)).unwrap()), "1");
+    assert_eq!(value_to_display(&apply_unary(UnaryOp::Factorial, Value::from_int(10)).unwrap()), "3,628,800");
+    assert_eq!(
+        apply_unary(UnaryOp::Factorial, Value::from_int(171)),
+        Err(CalcError::InputOutOfRange)
+    );
+    assert_eq!(
+        apply_unary(UnaryOp::Factorial, Value::from_int(-3)),
+        Err(CalcError::InvalidInput)
+    );
+    assert_eq!(value_to_display(&apply_unary(UnaryOp::Abs, Value::from_int(-7)).unwrap()), "7");
+    assert_eq!(value_to_display(&apply_unary(UnaryOp::Cbrt, Value::from_int(27)).unwrap()), "3");
+    assert_eq!(
+        apply_unary(UnaryOp::Cbrt, Value::from_int(-27))
+            .map(|v| value_to_display(&v)),
+        Ok("-3".into())
+    );
+    assert_eq!(
+        value_to_display(&apply_unary(UnaryOp::Cube, Value::from_int(3)).unwrap()),
+        "27"
+    );
+}
+
+#[test]
+fn sec_csc_cot_and_inverses() {
+    assert_eq!(value_to_display(&trig(AngleMode::Deg, UnaryOp::Sec, "60").unwrap()), "2");
+    assert_eq!(value_to_display(&trig(AngleMode::Deg, UnaryOp::Csc, "30").unwrap()), "2");
+    assert_eq!(value_to_display(&trig(AngleMode::Deg, UnaryOp::Cot, "45").unwrap()), "1");
+    assert_eq!(value_to_display(&trig(AngleMode::Deg, UnaryOp::Asec, "2").unwrap()), "60");
+    assert_eq!(value_to_display(&trig(AngleMode::Deg, UnaryOp::Acsc, "2").unwrap()), "30");
+    assert_eq!(value_to_display(&trig(AngleMode::Deg, UnaryOp::Acot, "1").unwrap()), "45");
+    assert_eq!(trig(AngleMode::Deg, UnaryOp::Asec, "0.5"), Err(CalcError::InvalidInput));
+    assert_eq!(trig(AngleMode::Deg, UnaryOp::Acsc, "0.5"), Err(CalcError::InvalidInput));
+}
+
+#[test]
+fn hyperbolic_family() {
+    assert_eq!(value_to_display(&apply_unary(UnaryOp::Sinh, Value::from_int(0)).unwrap()), "0");
+    assert_eq!(value_to_display(&apply_unary(UnaryOp::Cosh, Value::from_int(0)).unwrap()), "1");
+    assert_eq!(value_to_display(&apply_unary(UnaryOp::Tanh, Value::from_int(0)).unwrap()), "0");
+    assert_eq!(value_to_display(&apply_unary(UnaryOp::Sech, Value::from_int(0)).unwrap()), "1");
+    assert_eq!(apply_unary(UnaryOp::Csch, Value::from_int(0)), Err(CalcError::InputOutOfRange)); // 1/sinh(0)=∞
+    assert_eq!(apply_unary(UnaryOp::Coth, Value::from_int(0)), Err(CalcError::InputOutOfRange));
+    assert_eq!(value_to_display(&apply_unary(UnaryOp::Acosh, Value::from_int(1)).unwrap()), "0");
+    assert_eq!(value_to_display(&apply_unary(UnaryOp::Atanh, Value::from_int(0)).unwrap()), "0");
+    assert_eq!(apply_unary(UnaryOp::Acosh, Value::from_int(0)), Err(CalcError::InvalidInput));
+    assert_eq!(apply_unary(UnaryOp::Atanh, Value::from_int(1)), Err(CalcError::InvalidInput));
+    assert_eq!(apply_unary(UnaryOp::Asech, Value::from_int(2)), Err(CalcError::InvalidInput));
+    assert_eq!(apply_unary(UnaryOp::Acsch, Value::from_int(0)), Err(CalcError::InvalidInput));
+    assert_eq!(apply_unary(UnaryOp::Acoth, value_from_str("0.5")), Err(CalcError::InvalidInput)); // |x|<=1
+}
+
+#[test]
+fn floor_ceil() {
+    assert_eq!(value_to_display(&apply_unary(UnaryOp::Floor, value_from_str("2.7")).unwrap()), "2");
+    assert_eq!(value_to_display(&apply_unary(UnaryOp::Floor, value_from_str("-2.1")).unwrap()), "-3");
+    assert_eq!(value_to_display(&apply_unary(UnaryOp::Ceil, value_from_str("2.1")).unwrap()), "3");
+    assert_eq!(value_to_display(&apply_unary(UnaryOp::Ceil, value_from_str("-2.7")).unwrap()), "-2");
 }

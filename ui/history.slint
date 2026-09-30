@@ -163,9 +163,12 @@ component MenuItem inherits Rectangle {
     }
 }
 
-/// ≡ 打开的模式菜单（v1 仅"标准"可用，其余模式置灰占位），可滚动
+/// ≡ 打开的模式菜单（标准/科学可用，其余模式置灰占位），可滚动
 export component ModeMenu inherits Rectangle {
-    callback picked();
+    /// 0=标准 1=科学，驱动选中竖条
+    in property <int> current-mode: 0;
+    /// 0=标准 1=科学，其余项 -1（仅收起）
+    callback picked(int);
     callback settings();
 
     // 面板描边 + 圆角：左侧贴边取直角，仅右上/右下带弧度（同 Win11 浮出面板）
@@ -205,11 +208,11 @@ export component ModeMenu inherits Rectangle {
                         vertical-alignment: center;
                     }
                 }
-                MenuItem { label: "标准"; glyph: "🧮"; glyph-font: ""; selected: true; available: true; picked => { root.picked(); } } // 算盘/计算器
-                MenuItem { label: "科学"; glyph: "🧪"; glyph-font: ""; picked => { root.picked(); } } // 试管/实验瓶
-                MenuItem { label: "绘图"; glyph: "📈"; glyph-font: ""; picked => { root.picked(); } } // 上升趋势图
-                MenuItem { label: "程序员"; glyph: "💻"; glyph-font: ""; picked => { root.picked(); } } // 笔记本电脑
-                MenuItem { label: "日期计算"; glyph: "📅"; glyph-font: ""; picked => { root.picked(); } } // 日历
+                MenuItem { label: "标准"; glyph: "🧮"; glyph-font: ""; selected: root.current-mode == 0; available: true; picked => { root.picked(0); } } // 算盘/计算器
+                MenuItem { label: "科学"; glyph: "🧪"; glyph-font: ""; selected: root.current-mode == 1; available: true; picked => { root.picked(1); } } // 试管/实验瓶
+                MenuItem { label: "绘图"; glyph: "📈"; glyph-font: ""; picked => { root.picked(-1); } } // 上升趋势图
+                MenuItem { label: "程序员"; glyph: "💻"; glyph-font: ""; picked => { root.picked(-1); } } // 笔记本电脑
+                MenuItem { label: "日期计算"; glyph: "📅"; glyph-font: ""; picked => { root.picked(-1); } } // 日历
 
                 // 分组标题：转换器
                 Rectangle {
@@ -224,19 +227,19 @@ export component ModeMenu inherits Rectangle {
                         vertical-alignment: center;
                     }
                 }
-                MenuItem { label: "货币"; glyph: "💱"; glyph-font: ""; picked => { root.picked(); } } // 货币兑换
-                MenuItem { label: "体积"; glyph: "📦"; glyph-font: ""; picked => { root.picked(); } } // 包裹/箱子
-                MenuItem { label: "长度"; glyph: "📏"; glyph-font: ""; picked => { root.picked(); } } // 直尺
-                MenuItem { label: "重量"; glyph: "🏋️"; glyph-font: ""; picked => { root.picked(); } } // 举重/哑铃
-                MenuItem { label: "温度"; glyph: "🌡️"; glyph-font: ""; picked => { root.picked(); } } // 温度计
-                MenuItem { label: "能量"; glyph: "🔥"; glyph-font: ""; picked => { root.picked(); } } // 火焰 (原图能量图标是火焰)
-                MenuItem { label: "面积"; glyph: "🗺️"; glyph-font: ""; picked => { root.picked(); } } // 地图
-                MenuItem { label: "速度"; glyph: "🏃"; glyph-font: ""; picked => { root.picked(); } } // 跑步
-                MenuItem { label: "时间"; glyph: "⏱️"; glyph-font: ""; picked => { root.picked(); } } // 秒表/时钟
-                MenuItem { label: "功率"; glyph: "⚡"; glyph-font: ""; picked => { root.picked(); } } // 闪电
-                MenuItem { label: "数据"; glyph: "💾"; glyph-font: ""; picked => { root.picked(); } } // 软盘/数据
-                MenuItem { label: "压强"; glyph: "⏲️"; glyph-font: ""; picked => { root.picked(); } } // 计时器/仪表盘
-                MenuItem { label: "角度"; glyph: "📐"; glyph-font: ""; picked => { root.picked(); } } // 三角尺/量角器
+                MenuItem { label: "货币"; glyph: "💱"; glyph-font: ""; picked => { root.picked(-1); } } // 货币兑换
+                MenuItem { label: "体积"; glyph: "📦"; glyph-font: ""; picked => { root.picked(-1); } } // 包裹/箱子
+                MenuItem { label: "长度"; glyph: "📏"; glyph-font: ""; picked => { root.picked(-1); } } // 直尺
+                MenuItem { label: "重量"; glyph: "🏋️"; glyph-font: ""; picked => { root.picked(-1); } } // 举重/哑铃
+                MenuItem { label: "温度"; glyph: "🌡️"; glyph-font: ""; picked => { root.picked(-1); } } // 温度计
+                MenuItem { label: "能量"; glyph: "🔥"; glyph-font: ""; picked => { root.picked(-1); } } // 火焰 (原图能量图标是火焰)
+                MenuItem { label: "面积"; glyph: "🗺️"; glyph-font: ""; picked => { root.picked(-1); } } // 地图
+                MenuItem { label: "速度"; glyph: "🏃"; glyph-font: ""; picked => { root.picked(-1); } } // 跑步
+                MenuItem { label: "时间"; glyph: "⏱️"; glyph-font: ""; picked => { root.picked(-1); } } // 秒表/时钟
+                MenuItem { label: "功率"; glyph: "⚡"; glyph-font: ""; picked => { root.picked(-1); } } // 闪电
+                MenuItem { label: "数据"; glyph: "💾"; glyph-font: ""; picked => { root.picked(-1); } } // 软盘/数据
+                MenuItem { label: "压强"; glyph: "⏲️"; glyph-font: ""; picked => { root.picked(-1); } } // 计时器/仪表盘
+                MenuItem { label: "角度"; glyph: "📐"; glyph-font: ""; picked => { root.picked(-1); } } // 三角尺/量角器
             }
         }
 

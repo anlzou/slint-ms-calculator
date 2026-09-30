@@ -1,7 +1,7 @@
 slint::include_modules!();
 
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
-use slint_ms_calculator::app::App;
+use slint_ms_calculator::app::{App, CalcMode};
 use std::cell::{Cell, RefCell};
 use std::ffi::c_void;
 use std::rc::Rc;
@@ -61,6 +61,7 @@ struct UiCtx {
     hist: Rc<VecModel<HistoryItem>>,
     seq: Rc<Cell<u64>>,
     sys_dark: Rc<Cell<bool>>,
+    last_sci: Rc<Cell<bool>>,
 }
 
 impl UiCtx {
@@ -71,6 +72,20 @@ impl UiCtx {
         ui.set_result_text(big.into());
         ui.set_expression_text(a.small_line().into());
         ui.set_memory_busy(a.memory_busy());
+        let sci = matches!(a.mode(), CalcMode::Scientific);
+        ui.set_sci_mode(sci);
+        // Slint 的 preferred-height 只在创建时生效：模式切换时手动改窗口尺寸
+        if self.last_sci.get() != sci {
+            self.last_sci.set(sci);
+            let scale = ui.window().scale_factor();
+            let h = if sci { 620.0 } else { 580.0 };
+            ui.window().set_size(slint::PhysicalSize::new(
+                (380.0 * scale) as u32,
+                (h * scale) as u32,
+            ));
+        }
+        ui.set_angle_label(a.angle_label().into());
+        ui.set_second_active(a.second_active());
         let dark = match ui.get_theme_mode() {
             0 => false,
             1 => true,
@@ -99,6 +114,7 @@ fn main() {
         hist,
         seq: Rc::new(Cell::new(0)),
         sys_dark: Rc::new(Cell::new(system_dark())),
+        last_sci: Rc::new(Cell::new(false)),
     };
 
     {
