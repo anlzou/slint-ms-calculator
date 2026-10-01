@@ -227,24 +227,30 @@ fn main() {
         let _ = slint::quit_event_loop();
     });
     // 切换 no-frame 后窗口样式会重建：①圆角偏好要重新施加；②winit 不发 resize 事件，
-    // 布局/渲染停留在旧状态（要手动拖边框才恢复）。用物理尺寸做两步微扰：
-    // 先放大 2px、隔一拍再还原，强制两次真实的 WM_SIZE（同一帧内改了又改会被合并，无效）。
+    // 布局/渲染停留在旧状态（要手动拖边框才恢复）；③Linux 实测重建会把客户区撑高
+    // 37px（580→617，X11 去掉标题栏后把省下的空间算进客户区），必须显式还原目标尺寸。
+    // 基准取回调触发瞬间的 size()：那时重建还没发生，量到的就是用户当前看到的真实尺寸
+    //（实测入口 380x580，120ms 后已经是坏值）。还原仍走两步微扰：先 +2px、隔一拍再回到
+    // 目标值，强制两次真实的 WM_SIZE（同一帧内改了又改会被合并，无效）。
     let pin_weak = ui.as_weak();
     ui.on_pin_toggled(move || {
         platform::force_rounded_corners();
+        let target = pin_weak.upgrade().map(|u| u.window().size());
         let weak = pin_weak.clone();
         slint::Timer::single_shot(std::time::Duration::from_millis(120), move || {
             platform::force_rounded_corners();
             let Some(ui) = weak.upgrade() else { return };
             let win = ui.window();
-            let s = win.size();
-            win.set_size(slint::PhysicalSize::new(s.width + 2, s.height + 2));
+            let cur = win.size();
+            let (w, h) = match target {
+                Some(t) if t.width > 0 && t.height > 0 => (t.width, t.height),
+                _ => (cur.width, cur.height),
+            };
+            win.set_size(slint::PhysicalSize::new(w + 2, h + 2));
             let weak2 = weak.clone();
             slint::Timer::single_shot(std::time::Duration::from_millis(120), move || {
                 if let Some(ui) = weak2.upgrade() {
-                    let win = ui.window();
-                    let s = win.size();
-                    win.set_size(slint::PhysicalSize::new(s.width - 2, s.height - 2));
+                    ui.window().set_size(slint::PhysicalSize::new(w, h));
                 }
             });
         });

@@ -125,6 +125,38 @@ Linux 圆角交给合成器（空实现）、深浅色读 `gsettings org.gnome.d
 macOS 圆角同样空实现、深浅色读 `defaults read -g AppleInterfaceStyle`、链接用 `open`。
 置顶切换后的 2px 尺寸微扰（winit 不发 resize 事件）三平台共用，故保留在通用代码里。
 
+## 3.2 Linux 界面实测（2026-10-01，Ubuntu / GNOME Shell 50，Wayland 会话内抓 XWayland 窗口）
+
+抓图通路：把 `WAYLAND_DISPLAY` 置空让 winit 走 X11，再用 `XGetImage` 直接抓窗口客户区。
+整屏抓不到（合成器接管 root 后抓 root 是黑的，ffmpeg `x11grab` 实测只有 344 个非黑像素；
+GNOME 50 的 `org.gnome.Shell.Screenshot` D-Bus 对普通进程返回 `Screenshot is not allowed`；本机没有 grim/spectacle）。
+窗口按 `_NET_WM_PID` 认领，否则会抓到上一次没退干净的实例（踩过：五张状态图字节完全相同）。
+
+| 界面 | 中文 | 彩色 emoji | 备注 |
+|---|---|---|---|
+| 标准键盘 380×580 | 正常（三 / 标准） | 📌 正常 | 深色自动跟随 `color-scheme='prefer-dark'` |
+| 科学键盘 380×620 | 正常（三角学 / 函数） | 🔽 正常 | x²、²√x、xʸ、10ˣ 上下标正常 |
+| ≡ 模式菜单 | 正常 | 🧮📅 正常 | 2 组标题 + 18 项，`Flickable content-height: 724px`，窗口内可见到「速度」行和底部「设置」，数据/压强/角度 在折叠线以下，靠滚轮翻 |
+| 历史面板 | 正常（无历史记录） | 🗑 单色描边 | |
+| 设置页 | 正常 | 🎨 正常 | |
+
+渲染器差异（图标缺失的唯一成因）：`SLINT_BACKEND=software` 强制软件渲染器时，彩色 emoji
+（🧮🧪📅💱🏃🕐）整块渲染为空白，只有在单色符号字体里查得到的（📈📦📏🌡）还画得出来；
+默认（femtovg/GL）三列全部正常。所以「图标不显示」只会出现在 GL 不可用、Slint 退回软件渲染器的机器上
+（无 3D 驱动的虚拟机、部分远程会话）。同一张菜单图，software / femtovg / 默认三份抓图两两 md5 不同。
+
+置顶（无边框）模式尺寸：修复前实测切换后变成 320×480（= `min-width`×`min-height`）或 380×617
+（X11 去掉标题栏后把 37px 算进客户区），且两次运行结果不一致；修复后以 `pin-toggled` 回调入口量到的
+真实尺寸为还原目标（入口实测 380×580，120ms 后已是坏值，不能当基准），连测三次稳定 380×580，
+release 构建同样 380×580。±2px 两步微扰仍保留（Windows 靠它触发 WM_SIZE 重排）。
+已知边界：微扰占用约 240ms，这期间切「标准↔科学」会被还原值覆盖（实测 `pin,sci` 停在 580 而非 620），人手节奏碰不到。
+
+圆角：Linux 没有 DWM 那种窗口圆角 API，无边框窗口的圆角完全由合成器决定，GNOME 不给无边框窗口加圆角。
+应用侧要圆角只能自绘（透明边距 + 自画圆角和阴影），Slint 的 winit 后端没有稳定的透明窗口支持，故未做。
+
+dev 与 release 抓图字节一致（`/tmp/s_drawer.png` 与 `/tmp/rel_drawer.png` md5 相同）；
+去掉验证脚手架后的抓图与修复前基线 md5 相同（`d184382f…`），确认清理没改渲染。
+
 ## 4. 关键设计细节
 
 ### 4.1 Slint ↔ Rust 接口
