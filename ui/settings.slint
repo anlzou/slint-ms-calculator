@@ -79,16 +79,13 @@ export component SettingsPage inherits Rectangle {
         background: hdr-ta.pressed ? Theme.key-pressed : (hdr-ta.has-hover ? Theme.key-hover : transparent);
         border-radius: Theme.radius;
     }
-    Text {
-        x: hdr-ta.x;
-        y: hdr-ta.y;
-        width: hdr-ta.width;
-        height: hdr-ta.height;
-        text: "⬅️";
-        font-size: 16px;
-        color: Theme.text-primary;
-        horizontal-alignment: center;
-        vertical-alignment: center;
+    Image {
+        x: hdr-ta.x + (hdr-ta.width - 16px) / 2;
+        y: hdr-ta.y + (hdr-ta.height - 16px) / 2;
+        width: 16px;
+        height: 16px;
+        source: @image-url("icons/back.svg");
+        colorize: Theme.text-primary;
     }
 
     // 「设置」标题：与返回按钮同一行，水平居中
@@ -149,15 +146,13 @@ export component SettingsPage inherits Rectangle {
                     min-height: 44px;
                     vertical-stretch: 0;
 
-                    Text {
-                        x: 10px;
-                        y: (parent.height - 20px) / 2;
-                        width: 20px;
-                        height: 20px;
-                        text: "🎨";
-                        font-size: 14px;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
+                    Image {
+                        x: 12px;
+                        y: (parent.height - 16px) / 2;
+                        width: 16px;
+                        height: 16px;
+                        source: @image-url("icons/palette.svg");
+                        colorize: Theme.text-primary;
                     }
                     Text {
                         x: 42px;
@@ -177,17 +172,15 @@ export component SettingsPage inherits Rectangle {
                         font-size: 11px;
                         horizontal-alignment: left;
                     }
-                    Text {
+                    Image {
                         x: parent.width - 16px - 16px;
-                        y: (parent.height - 16px) / 2;
-                        width: 16px;
-                        height: 16px;
-                        // 折叠向下 🔽 / 展开向上 🔼（▾/▴ 在默认字体回退链无字形）
-                        text: root.theme-expanded ? "🔼" : "🔽";
-                        font-size: 12px;
-                        color: Theme.text-secondary;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
+                        y: (parent.height - 12px) / 2;
+                        width: 12px;
+                        height: 12px;
+                        // 折叠向下 / 展开向上：原用 🔽🔼 emoji（▾/▴ 在默认字体回退链无字形），
+                        // 现改单色 SVG，两种渲染器都有形
+                        source: root.theme-expanded ? @image-url("icons/chevron-up.svg") : @image-url("icons/chevron-down.svg");
+                        colorize: Theme.text-secondary;
                     }
                 }
 
@@ -244,15 +237,13 @@ export component SettingsPage inherits Rectangle {
                 Text { text: "作者 anlzou"; color: Theme.text-secondary; font-size: 11px; horizontal-alignment: left; }
                 Text { text: "版本 0.1.0"; color: Theme.text-secondary; font-size: 11px; horizontal-alignment: left; }
             }
-            Text {
-                x: 16px;
-                y: (parent.height - 20px) / 2;
-                width: 20px;
-                height: 20px;
-                text: "🧮";
-                font-size: 15px;
-                horizontal-alignment: center;
-                vertical-alignment: center;
+            Image {
+                x: 18px;
+                y: (parent.height - 16px) / 2;
+                width: 16px;
+                height: 16px;
+                source: @image-url("icons/calculator.svg");
+                colorize: Theme.text-secondary;
             }
 
             // 仓库地址点击区：覆盖第 3 行文字带

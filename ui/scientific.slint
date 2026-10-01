@@ -115,11 +115,20 @@ export component ScientificKeypad inherits Rectangle {
                     padding-left: 8px;
                     padding-right: 8px;
                     alignment: center;
+                    spacing: 4px;
                     Text {
-                        text: "三角学 " + (root.menu-open == 1 ? "🔼" : "🔽");
+                        text: "三角学";
                         color: Theme.text-primary;
                         font-size: 12px;
                         vertical-alignment: center;
+                    }
+                    // 折叠/展开箭头：原用 🔽🔼 emoji，软件渲染器下会变空白，换成可染色的单色 SVG
+                    Image {
+                        width: 11px;
+                        height: 11px;
+                        vertical-alignment: center;
+                        source: root.menu-open == 1 ? @image-url("icons/chevron-up.svg") : @image-url("icons/chevron-down.svg");
+                        colorize: Theme.text-primary;
                     }
                 }
             }
@@ -136,11 +145,19 @@ export component ScientificKeypad inherits Rectangle {
                     padding-left: 8px;
                     padding-right: 8px;
                     alignment: center;
+                    spacing: 4px;
                     Text {
-                        text: "函数 " + (root.menu-open == 2 ? "🔼" : "🔽");
+                        text: "函数";
                         color: Theme.text-primary;
                         font-size: 12px;
                         vertical-alignment: center;
+                    }
+                    Image {
+                        width: 11px;
+                        height: 11px;
+                        vertical-alignment: center;
+                        source: root.menu-open == 2 ? @image-url("icons/chevron-up.svg") : @image-url("icons/chevron-down.svg");
+                        colorize: Theme.text-primary;
                     }
                 }
             }

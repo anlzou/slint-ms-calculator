@@ -80,6 +80,10 @@ slint-ms-calculator/
 │   ├── display.slint        # 双行显示 + 错误文案
 │   ├── memory.slint         # 记忆条
 │   ├── history.slint        # 历史侧栏（ListView）
+│   ├── scientific.slint     # 科学键盘 + 分组折叠
+│   ├── settings.slint       # 设置页（主题/关于）
+│   ├── icon.png             # 标题栏/任务栏图标（单色位图）
+│   ├── icons/               # 27 个单色 SVG 图标（Tabler Icons，MIT）
 │   └── theme.slint          # 全局常量：色板/圆角/字号（仿 Fluent Light）
 ├── src/
 │   ├── main.rs              # 入口：创建窗口 + 接线
@@ -140,10 +144,11 @@ GNOME 50 的 `org.gnome.Shell.Screenshot` D-Bus 对普通进程返回 `Screensho
 | 历史面板 | 正常（无历史记录） | 🗑 单色描边 | |
 | 设置页 | 正常 | 🎨 正常 | |
 
-渲染器差异（图标缺失的唯一成因）：`SLINT_BACKEND=software` 强制软件渲染器时，彩色 emoji
+渲染器差异（emoji 版图标缺失的唯一成因）：`SLINT_BACKEND=software` 强制软件渲染器时，彩色 emoji
 （🧮🧪📅💱🏃🕐）整块渲染为空白，只有在单色符号字体里查得到的（📈📦📏🌡）还画得出来；
 默认（femtovg/GL）三列全部正常。所以「图标不显示」只会出现在 GL 不可用、Slint 退回软件渲染器的机器上
 （无 3D 驱动的虚拟机、部分远程会话）。同一张菜单图，software / femtovg / 默认三份抓图两两 md5 不同。
+上表是改造前 emoji 版的实测，保留作对照；图标现已全部换成单色 SVG，见 3.3。
 
 置顶（无边框）模式尺寸：修复前实测切换后变成 320×480（= `min-width`×`min-height`）或 380×617
 （X11 去掉标题栏后把 37px 算进客户区），且两次运行结果不一致；修复后以 `pin-toggled` 回调入口量到的
@@ -156,6 +161,30 @@ release 构建同样 380×580。±2px 两步微扰仍保留（Windows 靠它触�
 
 dev 与 release 抓图字节一致（`/tmp/s_drawer.png` 与 `/tmp/rel_drawer.png` md5 相同）；
 去掉验证脚手架后的抓图与修复前基线 md5 相同（`d184382f…`），确认清理没改渲染。
+
+## 3.3 图标改为单色 SVG 资源（2026-10-01）
+
+3.2 的结论是：只要 Slint 退回软件渲染器，emoji 图标就成块空白。故把 29 处 emoji 文本节点全部换成
+`ui/icons/` 下的 27 个单色 SVG（Tabler Icons v3.48.0，MIT，24×24 线性、`stroke="currentColor"`）。
+规范化只做两件事：删掉源文件里 `stroke="none"` 的占位 path、去掉 `width/height/class` 属性
+（尺寸由 `.slint` 里的 `Image` 决定，不留两处真值）。取包走
+`unpkg.com/@tabler/icons@3.48.0/icons/outline/<name>.svg`（本机 crates.io 403，unpkg / jsdelivr 200）。
+
+Slint 侧两个坑：
+- `@image-url()` 必须是编译期字面量，不能拼字符串，所以 `MenuItem` 的图标属性从 `glyph: string`
+  改成 `icon: image`，在 `.slint` 构造点写 `icon: @image-url("icons/calculator.svg")`；
+  折叠箭头这类二选一可以直接 `source: cond ? @image-url(a) : @image-url(b)`。
+- `Image` 默认 `image-fit: fill`，非正方盒会把图标拉变形，所以图标盒一律取正方形（11~16px），
+  需要留白/对齐时在外面套定宽 `Rectangle`。
+
+换成 SVG 后 `colorize` 才生效，图标第一次能跟随主题与状态变色：置顶态图钉染 `Theme.accent`、
+无边框关闭键 hover 转白、菜单置灰项用 `Theme.text-secondary`（emoji 时代 `Text` 的 `color` 对彩色
+emoji 无效，只能靠底色高亮表示选中）。窗口图标 `ui/icon.png` 不变（那是标题栏/任务栏用的位图）。
+
+复测（同一套抓图通路，`SLINT_BACKEND=software` 与默认各一遍）：模式菜单 19 项、设置页 4 处、
+科学键盘 2 处折叠箭头、顶栏图钉/历史、置顶态关闭键，两种渲染器下全部可见、无空白；
+software 与默认两张菜单图 md5 仍不同（`a3084539…` vs `5d5f0ed4…`），排除"其实跑的是同一个渲染器"。
+`cargo test` 31 + 21 通过，`cargo check --target x86_64-pc-windows-msvc` 通过（SVG 随二进制内嵌，Windows 侧不额外带文件）。
 
 ## 4. 关键设计细节
 
