@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- 应用图标：现代电子计算器（窗口/任务栏 icon，见 ui/main.slint 的 Window.icon）。
+       旧图标 ui/icons/icon-abacus.png（彩色算盘 emoji 渲染图）保留作历史参考。
+       配色沿用 ui/theme.slint 的强调色 #4cc2ff；几何按 4 列 × 4 行键盘栅格计算，
+       最后一行左侧是跨两格的 0 键，右侧一列是强调色的运算符/等号键。 -->
+  <defs>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3a4353"/>
+      <stop offset="1" stop-color="#1e242f"/>
+    </linearGradient>
+    <linearGradient id="glass" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f4f8fd"/>
+      <stop offset="1" stop-color="#dbe5f1"/>
+    </linearGradient>
+  </defs>
+
+  <!-- 机身 -->
+  <rect x="7" y="2" width="50" height="60" rx="10" fill="url(#body)"/>
+  <!-- 描边：深色任务栏上勾出轮廓，浅色背景上几乎不可见 -->
+  <rect x="7.5" y="2.5" width="49" height="59" rx="9.5" fill="none" stroke="#ffffff" stroke-opacity="0.12"/>
+
+  <!-- 显示屏 -->
+  <rect x="13" y="8" width="38" height="13" rx="4" fill="url(#glass)"/>
+  <rect x="26.6" y="11" width="3.4" height="7.4" rx="1.4" fill="#232b38"/>
+  <rect x="32.2" y="11" width="3.4" height="7.4" rx="1.4" fill="#232b38"/>
+  <rect x="37.8" y="11" width="3.4" height="7.4" rx="1.4" fill="#232b38"/>
+  <rect x="43.4" y="11" width="3.4" height="7.4" rx="1.4" fill="#232b38"/>
+  <!-- 小数点 -->
+  <circle cx="41.9" cy="18.4" r="0.9" fill="#232b38"/>
+
+  <!-- 键盘：列 x = 13 / 23.17 / 33.33 / 43.5（键宽 7.5），行 y = 26 / 34 / 42 / 50（键高 6） -->
+  <g fill="#4d586b">
+    <rect x="13" y="26" width="7.5" height="6" rx="2.2"/>
+    <rect x="23.17" y="26" width="7.5" height="6" rx="2.2"/>
+    <rect x="33.33" y="26" width="7.5" height="6" rx="2.2"/>
+
+    <rect x="13" y="34" width="7.5" height="6" rx="2.2"/>
+    <rect x="23.17" y="34" width="7.5" height="6" rx="2.2"/>
+    <rect x="33.33" y="34" width="7.5" height="6" rx="2.2"/>
+
+    <rect x="13" y="42" width="7.5" height="6" rx="2.2"/>
+    <rect x="23.17" y="42" width="7.5" height="6" rx="2.2"/>
+    <rect x="33.33" y="42" width="7.5" height="6" rx="2.2"/>
+
+    <!-- 跨两格的 0 键 -->
+    <rect x="13" y="50" width="17.67" height="6" rx="2.2"/>
+    <rect x="33.33" y="50" width="7.5" height="6" rx="2.2"/>
+  </g>
+  <!-- 运算符列 + 等号：强调色 -->
+  <g fill="#4cc2ff">
+    <rect x="43.5" y="26" width="7.5" height="6" rx="2.2"/>
+    <rect x="43.5" y="34" width="7.5" height="6" rx="2.2"/>
+    <rect x="43.5" y="42" width="7.5" height="6" rx="2.2"/>
+    <rect x="43.5" y="50" width="7.5" height="6" rx="2.2"/>
+  </g>
+</svg>

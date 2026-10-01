@@ -17,8 +17,9 @@ struct KeyDef {
 
 export component MainWindow inherits Window {
     title: "计算器";
-    // 标题栏图标：🧮(U+1F9EE) 渲染成的单色 PNG（GDI+ 不支持彩色 emoji 分层）
-    icon: @image-url("icon.png");
+    // 窗口/任务栏图标：自绘的现代电子计算器（矢量，任意 DPI 都锐利）。
+    // 旧的彩色算盘图保留在 ui/icons/icon-abacus.png 作历史参考。
+    icon: @image-url("icons/app-calculator.svg");
     // 置顶 + 自绘圆角时窗口本身必须透明，否则四角会被底色填成方块
     background: root.css-corners ? transparent : Theme.window;
     // 置顶模式：隐藏标题栏（去掉三个窗口按钮）+ 恒在最前，窗口大小不变

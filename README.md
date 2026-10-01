@@ -82,8 +82,8 @@ slint-ms-calculator/
 │   ├── history.slint        # 历史侧栏（ListView）
 │   ├── scientific.slint     # 科学键盘 + 分组折叠
 │   ├── settings.slint       # 设置页（主题/关于）
-│   ├── icon.png             # 标题栏/任务栏图标（单色位图）
-│   ├── icons/               # 27 个单色 SVG 图标（Tabler Icons，MIT）
+│   ├── icons/               # 图标资源：27 个单色 SVG（Tabler，MIT）+ 应用图标 app-calculator.svg
+│   │                        #   （icon-abacus.png 是改造前的彩色算盘位图，留作历史参考）
 │   └── theme.slint          # 全局常量：色板/圆角/字号（仿 Fluent Light）
 ├── src/
 │   ├── main.rs              # 入口：创建窗口 + 接线
@@ -179,7 +179,7 @@ Slint 侧两个坑：
 
 换成 SVG 后 `colorize` 才生效，图标第一次能跟随主题与状态变色：置顶态图钉染 `Theme.accent`、
 无边框关闭键 hover 转白、菜单置灰项用 `Theme.text-secondary`（emoji 时代 `Text` 的 `color` 对彩色
-emoji 无效，只能靠底色高亮表示选中）。窗口图标 `ui/icon.png` 不变（那是标题栏/任务栏用的位图）。
+emoji 无效，只能靠底色高亮表示选中）。窗口图标当时仍是 `ui/icon.png`（位图），后来一并换成矢量，见 3.5。
 
 复测（同一套抓图通路，`SLINT_BACKEND=software` 与默认各一遍）：模式菜单 19 项、设置页 4 处、
 科学键盘 2 处折叠箭头、顶栏图钉/历史、置顶态关闭键，两种渲染器下全部可见、无空白；
@@ -219,6 +219,29 @@ X11 上 winit 因此挑 32bpp ARGB visual，femtovg / wgpu 也按 `window_attrib
 
 边界：只在有合成器时成立。裸 X11 且没有合成器（或不支持 per-pixel alpha 的桌面）时四角会露出黑底；
 macOS 走同一开关，但本机无法实测。投影没做——要投影得再留一圈透明边距，会把内容整体内缩。
+
+## 3.5 应用图标改为自绘矢量电子计算器（2026-10-01）
+
+原来的 `ui/icon.png` 是一张彩色算盘图（当年 emoji 路线的产物，见 docs/踩坑记录.md 第 5 节），
+和本项目"电子计算器复刻"的主题并不贴。现在它 `git mv` 到 `ui/icons/icon-abacus.png` 留作历史参考，
+窗口图标换成 `ui/icons/app-calculator.svg`：
+
+```slint
+Window {
+    icon: @image-url("icons/app-calculator.svg");   // ui/main.slint
+}
+```
+
+设计（64×64 viewBox，全部用 rect/circle 手排，没有外部依赖）：机身 `50×60` 圆角矩形 `rx=10`，
+深灰渐变 `#3a4353 → #1e242f`，外圈 12% 白描边（深色任务栏勾得出轮廓，浅色背景上几乎不可见）；
+显示屏 `38×13 rx=4` 走玻璃渐变，里面四条 `3.4×7.4` 的位段加一个小数点表示"在算数"；
+键盘按 4 列 × 4 行栅格算——列 x = 13 / 23.17 / 33.33 / 43.5（键宽 7.5），行 y = 26 / 34 / 42 / 50（键高 6），
+键面 `rx=2.2`，末行左侧是跨两格的 0 键（`17.67` 宽），最右列四键用 `Theme.accent` 的 `#4cc2ff` 当运算符/等号。
+
+复测（同一套 X11 抓图通路，从活的窗口读 `_NET_WM_ICON`）：属性 16392 字节、内含单张 64×64、
+非透明像素 71.6%——与机身 `50×60` 在 64×64 画布里的占比（3000/4096 = 73.2%，再扣掉四个圆角）对得上，
+说明 Slint 侧的 resvg 光栅化没有裁切也没画空。64 / 32 / 16 三档缩放拼图后仍可辨认为计算器；
+同一档对照旧的算盘位图，16px 下珠子并成一团。SVG 随二进制内嵌，Windows 侧不需要额外带文件。
 
 ## 4. 关键设计细节
 
