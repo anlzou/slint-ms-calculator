@@ -64,7 +64,8 @@ mod platform {
 
 #[cfg(not(windows))]
 mod platform {
-    /// 圆角由合成器/窗口管理器负责，无需（也无法）手动设置。
+    /// 非 Windows 没有 DWM 的圆角偏好可调：置顶模式四角、普通模式底部两角都由 .slint 自绘
+    /// （见 ui/main.slint 的 corner-bg），这里无事可做。
     pub fn force_rounded_corners() {}
 
     /// GNOME/KDE 用 gsettings 的 color-scheme，其次看 gtk-theme 名；读不到就按浅色。
@@ -177,11 +178,11 @@ fn main() {
     let hist = Rc::new(VecModel::<HistoryItem>::default());
     ui.set_history(ModelRc::from(hist.clone()));
 
-    // 置顶（无边框）模式的圆角：Windows 由 DWM 施加（platform::force_rounded_corners），
-    // Linux/macOS 的合成器不给无边框窗口加圆角，只能自绘——把半径交给 .slint，
-    // 窗口底色转透明、由圆角矩形上色。半径为 0 时 .slint 完全不碰透明，走原来的路径。
+    // 自绘圆角半径：Windows 由 DWM 统一加圆角（platform::force_rounded_corners），传 0 走原路径；
+    // Linux/macOS 的合成器不给无边框窗口加圆角、也不给普通模式客户区底部加圆角，只能自绘——
+    // 把半径交给 .slint，窗口底色转透明、由圆角矩形上色（普通模式只切底部两角，见 main.slint 的 corner-bg）。
     #[cfg(not(windows))]
-    ui.set_pin_corner_radius(12.0);
+    ui.set_corner_radius(12.0);
 
     let ctx = UiCtx {
         weak: ui.as_weak(),

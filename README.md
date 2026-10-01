@@ -191,10 +191,9 @@ software 与默认两张菜单图 md5 仍不同（`a3084539…` vs `5d5f0ed4…`
 Windows 有 DWM 的 `DWMWA_WINDOW_CORNER_PREFERENCE`，Linux/macOS 没有对应 API：GNOME 的合成器只给
 带装饰的窗口加圆角，无边框窗口一律直角。所以非 Windows 走"透明底 + 圆角矩形"的自绘方案：
 
-- `ui/main.slint`：新增 `in-out property <float> pin-corner-radius: 0;` 和派生的
-  `css-corners: root.pinned && root.pin-corner-radius > 0`。启用时 `Window { background: transparent }`，
-  并在最底层放一块 `Rectangle { background: Theme.window; border-radius: pin-corner-radius * 1px }` 上色。
-- `src/main.rs`：`#[cfg(not(windows))] ui.set_pin_corner_radius(12.0);`。Windows 保持 0，继续由 DWM 负责，
+- `ui/main.slint`：新增 `in-out property <float> corner-radius: 0;` 和派生的 `css-corners: root.corner-radius > 0`。启用时 `Window { background: transparent }`，
+  并在最底层放一块 `Rectangle { background: Theme.window; border-radius: corner-radius * 1px }` 上色。
+- `src/main.rs`：`#[cfg(not(windows))] ui.set_corner_radius(12.0);`。Windows 保持 0，继续由 DWM 负责，
   不让两条圆角路径叠加；半径只有一处真值，`.slint` 里 `* 1px` 转成 length。
 
 关键前提是"Slint 能不能要到带 alpha 的表面"。答案是可以：`i-slint-backend-winit` 的
@@ -242,6 +241,42 @@ Window {
 非透明像素 71.6%——与机身 `50×60` 在 64×64 画布里的占比（3000/4096 = 73.2%，再扣掉四个圆角）对得上，
 说明 Slint 侧的 resvg 光栅化没有裁切也没画空。64 / 32 / 16 三档缩放拼图后仍可辨认为计算器；
 同一档对照旧的算盘位图，16px 下珠子并成一团。SVG 随二进制内嵌，Windows 侧不需要额外带文件。
+
+## 3.6 顶栏两个模式入口 + 普通模式底部圆角（2026-10-01）
+
+**「标准/科学」文本改成模式菜单入口。** 原来只有 ≡ 那 26×26 能点开抽屉，旁边的模式名是纯 `Text`。
+现在它和 ≡ 一样是一个 `Rectangle { TouchArea + hover 底色 + Text }` 单元（宽 30→34px，容纳 hover 高亮块），
+`clicked => root.drawer = !root.drawer`，与原版一致：点 ≡ 或点模式名都开抽屉。
+
+**普通模式补底部两角。** 3.4 只处理了置顶模式，普通（带标题栏）模式下顶部两角由窗口管理器圆掉，
+底部两角仍是直角。Slint 的 `Rectangle` 只有统一的 `border-radius`，没有逐角半径，所以用"把圆弧挪出窗外"：
+`corner-bg` 在普通模式取 `y = -radius`、`height = root.height + radius`，顶部那段圆弧整段落在窗口外被裁掉，
+露出来的只有底部两角；置顶模式回到 `y = 0` 四角都圆。`css-corners` 的判据也从
+`pinned && radius > 0` 放宽为 `radius > 0`。
+
+## 3.7 点击级验证通道（Slint system-testing）
+
+前面几节的界面实测都只能看静态抓图，因为**本机 XWayland 下合成输入点不到窗口**：
+窗口折算到 X root 的坐标是负的（实测 `(-870,-385)`），`XWarpPointer` 和 XTest 的 MotionNotify
+都被夹到 root 边界 `(0,0)`；`XSendEvent` 造的事件又被 winit 按 `send_event` 标志丢掉。
+所以点击类改动原先只能记成"无法实测"。现在走 Slint 自己的测试通道：
+`slint = { features = ["system-testing"] }` 加 `SLINT_EMIT_DEBUG_INFO=1` 构建，运行时设
+`SLINT_TEST_SERVER=127.0.0.1:<port>`——**app 反向连到测试脚本监听的 TCP**，
+帧格式是 4 字节大端长度 + protobuf（见 `slint_systest.proto`）。`RequestFindElementsById` 拿元素句柄，
+`RequestElementClick` 派发真实点击；点击仍走正常命中测试，所以遮罩照吞不误（这正是想要的语义）。
+元素 id 带组件前缀，`menu-ta` 要写成 `MainWindow::menu-ta`。
+
+实测（`/tmp/systest.py`，脚本不入库）：
+
+| 断言 | 结果 |
+|---|---|
+| ≡ 与「标准」都是可点热区 | `MainWindow::menu-ta` 26×28 @ (6,6)、`MainWindow::mode-ta` 34×28 @ (36,6)，各点一次都能开抽屉 |
+| 普通模式只圆底部两角 | 顶部 6 行首个不透明像素 x 全为 0（直角），底部 6 行是 12,7,6,4,3,3（圆弧），全透明像素 46；科学型 380×620 下同样是 46/235600 |
+| 置顶模式四角仍圆（属性改名回归） | 四角 alpha 均为 0、全透明 92 像素，顶部与底部边界同为 12,7,6,4,3,3 |
+| 置顶↔普通来回切 | 两次 `pin-ta` 点击后窗口稳定 380×580，圆角状态跟着 `pinned` 正确翻转 |
+
+验证完把 `Cargo.toml` 里的 `features = ["system-testing"]` 撤掉：它会把测试服务端编进产物，
+Slint 自己也标注"不建议用于发布构建"。
 
 ## 4. 关键设计细节
 

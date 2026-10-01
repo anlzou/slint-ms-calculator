@@ -20,7 +20,7 @@ export component MainWindow inherits Window {
     // 窗口/任务栏图标：自绘的现代电子计算器（矢量，任意 DPI 都锐利）。
     // 旧的彩色算盘图保留在 ui/icons/icon-abacus.png 作历史参考。
     icon: @image-url("icons/app-calculator.svg");
-    // 置顶 + 自绘圆角时窗口本身必须透明，否则四角会被底色填成方块
+    // 自绘圆角时窗口本身必须透明，否则四角会被底色填成方块
     background: root.css-corners ? transparent : Theme.window;
     // 置顶模式：隐藏标题栏（去掉三个窗口按钮）+ 恒在最前，窗口大小不变
     no-frame: root.pinned;
@@ -56,11 +56,12 @@ export component MainWindow inherits Window {
     // 保持在顶部：无边框 + 恒在最前（窗口尺寸不变），置顶模式带关闭按钮
     in-out property <bool> pinned: false;
 
-    /// 置顶模式的自绘圆角半径（0 = 不启用）。Windows 交给 DWM 加圆角，保持 0；
-    /// Linux/macOS 的合成器不给无边框窗口加圆角，Rust 端按平台置 12，
-    /// 启用后窗口底色转透明、由下面 corner-bg 这块圆角矩形上色，四角露出桌面。
-    in-out property <float> pin-corner-radius: 0;
-    private property <bool> css-corners: root.pinned && root.pin-corner-radius > 0;
+    /// 自绘圆角半径（0 = 不启用）。Windows 交给 DWM 加圆角，Rust 端传 0；
+    /// Linux/macOS 的合成器既不给无边框窗口加圆角，也不给普通模式客户区的底部加圆角，
+    /// Rust 端按平台置 12：窗口底色转透明、由下面 corner-bg 这块圆角矩形上色。
+    /// 置顶模式四角都圆；普通模式顶部两角由窗口管理器的标题栏负责，corner-bg 把圆弧挪出窗外，只留底部两角。
+    in-out property <float> corner-radius: 0;
+    private property <bool> css-corners: root.corner-radius > 0;
 
     // ≡ 模式菜单浮层 / 时钟图标历史面板（回调内赋值用 =，属性名不带连字符以避开解析歧义）
     private property <bool> drawer: false;
@@ -106,12 +107,18 @@ export component MainWindow inherits Window {
 
     forward-focus: kb;
 
-    // 置顶模式的圆角底：窗口透明后由这块矩形上色，四角自然露出桌面。
-    // 内容（顶栏 4px 内边距 + 图标）都落在圆内，不会被切到。
+    // 自绘圆角的底：窗口透明后由这块矩形上色，圆弧外自然露出桌面。
+    // 置顶模式四角都要圆，矩形铺满窗口；普通模式顶部两角归标题栏管，
+    // 于是把矩形上移一个半径——Slint 的 Rectangle 只有统一的 border-radius，没有逐角半径，
+    // 只能靠"顶部圆弧整段挪到窗外被裁掉"来只留底部两角。
     corner-bg := Rectangle {
         visible: root.css-corners;
+        x: 0px;
+        y: root.pinned ? 0px : (0px - root.corner-radius * 1px);
+        width: root.width;
+        height: root.pinned ? root.height : (root.height + root.corner-radius * 1px);
         background: Theme.window;
-        border-radius: root.pin-corner-radius * 1px;
+        border-radius: root.corner-radius * 1px;
     }
 
     // 键盘输入：物理按键文本直接透传给 Rust（数字/运算符/Enter/Esc/Backspace 等）
@@ -151,17 +158,28 @@ export component MainWindow inherits Window {
                     }
                 }
 
-                // 「标准/科学」：Slint 布局中 visible:false 仍占位，须用 min/max-width 归零折叠
-                Text {
+                // 「标准/科学」：同原版一样也是模式菜单的入口，点文本直接开抽屉。
+                // Slint 布局中 visible:false 仍占位，须用 min/max-width 归零折叠。
+                Rectangle {
                     visible: !root.chrome-hidden;
-                    min-width: root.chrome-hidden ? 0px : 30px;
-                    max-width: root.chrome-hidden ? 0px : 30px;
-                    text: root.sci-mode ? "科学" : "标准";
-                    color: Theme.text-primary;
-                    font-size: 13px;
-                    font-weight: 600;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
+                    min-width: root.chrome-hidden ? 0px : 34px;
+                    max-width: root.chrome-hidden ? 0px : 34px;
+                    min-height: root.chrome-hidden ? 0px : 26px;
+                    mode-ta := TouchArea {
+                        clicked => { root.drawer = !root.drawer; }
+                    }
+                    Rectangle {
+                        background: mode-ta.pressed ? Theme.key-pressed : (mode-ta.has-hover ? Theme.key-hover : transparent);
+                        border-radius: Theme.radius;
+                    }
+                    Text {
+                        text: root.sci-mode ? "科学" : "标准";
+                        color: Theme.text-primary;
+                        font-size: 13px;
+                        font-weight: 600;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
                 }
 
                 // 保持在顶部：切换全屏置顶，高度同 ≡，宽度收紧；图标用 ui/icons/pin.svg
