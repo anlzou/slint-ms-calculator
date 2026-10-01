@@ -88,7 +88,7 @@ slint-ms-calculator/
 ├── src/
 │   ├── main.rs              # 入口：创建窗口 + 接线
 │   ├── app.rs               # AppController：状态机与 UI 属性映射 + 状态快照/恢复
-│   ├── persist.rs           # 状态落盘（记忆/历史/模式/角度）+ Wayland→X11 置顶重启
+│   ├── persist.rs           # 状态落盘（记忆/历史/模式/角度/主题）+ Wayland→X11 置顶重启
 │   └── engine/
 │       ├── mod.rs
 │       ├── lexer.rs         # Token：数字/运算符/一元函数/括号(预留)
@@ -115,13 +115,13 @@ cargo build --release
 # Linux（X11 / Wayland 均可，本机实测 2026-10-01）
 cargo run                 # 调试运行，窗口事件循环正常
 cargo build --release
-cargo test                # lib 37 passed + 引擎集成 21 passed
+cargo test                # lib 38 passed + 引擎集成 21 passed
 # 交叉检查 Windows 分支仍能通过类型检查：
 cargo check --target x86_64-pc-windows-msvc
 
 # 系统依赖：链接期需要 fontconfig / freetype（Debian/Ubuntu: libfontconfig-dev libfreetype-dev）
 # 运行时可选：xdg-open（设置页打开链接）、gsettings（浅色/深色自动跟随，缺失则按浅色）
-# 状态文件：~/.local/state/slint-ms-calculator/state.tsv（记忆槽/历史/模式/角度，见 3.9）
+# 状态文件：~/.local/state/slint-ms-calculator/state.tsv（记忆槽/历史/模式/角度/主题，见 3.9）
 # Wayland 会话注意：点"置顶"会存好状态后重启到 X11 后端（协议层无法在 Wayland 请求置顶），见 3.9
 ```
 
@@ -326,6 +326,7 @@ Windows 走 `%LOCALAPPDATA%`、macOS 走 `~/Library/Application Support`，文�
 slint-ms-calc<TAB>v1
 mode<TAB>scientific
 angle<TAB>rad
+theme<TAB>1                          # 0 浅色 / 1 深色 / 2 跟随系统
 mem<TAB>E 12 5                       # 精确值 E 分子 分母；近似值 A <f64 Debug 形式>
 hist<TAB>E 1 2<TAB>1 ÷ 2 =<TAB>0.5   # 值<TAB>表达式<TAB>展示结果，最新在前
 ```
@@ -333,6 +334,14 @@ hist<TAB>E 1 2<TAB>1 ÷ 2 =<TAB>0.5   # 值<TAB>表达式<TAB>展示结果，最
 先写 `.tmp` 再 rename（原子），每次按键后写一份（几十行文本）。解析器对认不出的行整行跳过，
 `Rational` 走 `E` 分支所以 `1 ÷ 2` 恢复后仍是精确的 1/2、不会降级成浮点。
 当前输入的表达式不存，同原版重开只有一个干净的 0。
+
+**主题（2026-10-01 补）：** 第一版只落了模式/角度/记忆/历史，于是"点置顶以后主题变回默认"——
+`theme-mode` 当时只是 `MainWindow` 上的 `in-out property <int> theme-mode: 2`，Rust 侧没有对应状态，
+换进程后新实例直接拿初值 2（跟随系统），本机 GNOME 是 `prefer-dark`，看起来就是"深色把浅色覆盖了"。
+所以把它搬进 `App`：新增 `ThemeMode` 枚举（`#[default] Auto`——用裸 `i32` 的话 `Default` 给的是 0，
+会被解释成浅色），`snapshot()` 多写一行 `theme`，`restore()` 认不出的值整行跳过、保持当前，
+`main.rs` 在启动恢复之后 `ui.set_theme_mode(app.theme_mode())` 把值灌回 UI，设置页回调里
+`set_theme_mode` + `save_state`。`reset()`（子页 C）也把主题和模式/角度一样留着，同原版。
 
 **"启动即置顶"还得多一步。** 新进程在 `MainWindow::new()` 之后立刻 `set_pinned(true)`，
 无边框第一帧就生效，但 `_NET_WM_STATE_ABOVE` 收不到——EWMH 的客户端消息只对**已映射**窗口有效，
@@ -351,6 +360,10 @@ hist<TAB>E 1 2<TAB>1 ÷ 2 =<TAB>0.5   # 值<TAB>表达式<TAB>展示结果，最
 | 加 `level-pending` 后启动即置顶 | `[_NET_WM_STATE_ABOVE, _NET_WM_STATE_FOCUSED]`；再点取消 → `[]` |
 | Wayland 点置顶整条链 | 父进程退出、新 pid 起来、X 窗口 380×580、ABOVE 到位、历史面板里 `1 ÷ 2 = 0.5` 还在 |
 | 状态文件 | 按 1 ÷ 2 = 后落盘为 `mode\tstandard` + `hist\tE 1 2\t1 ÷ 2 =\t0.5`，精确有理数走 `E` 分支 |
+| 选浅色 → Wayland 点置顶（主题修复后） | 状态文件出现 `theme\t0`；重启后的 X 窗口显示区均色 `(242, 242, 242)`、按键区 `(219, 231, 242)`，与 X11 原地置顶的浅色截图 `(242, 242, 242)`/`(219, 232, 243)` 一致 |
+| 同一序列、修复前 | 显示区 `(32, 32, 32)`、按键区 `(59, 73, 81)`，即掉回"跟随系统"（本机 `color-scheme=prefer-dark`） |
+| 反向对照（断言能红） | 状态文件写 `theme\t2` 走同一条链 → 重启后仍是 `(32, 32, 32)` 深色，说明浅色那次不是"永远浅色" |
+| 侧栏"设置"入口 | 默认 580px 高的窗口里它排在侧栏末尾、落在窗外：`dumpb:MenuItem` 只返回 14/19 项。实测先给窗口派一个 `Resized(380x820)` 事件，第 19 项（y=750.5）才出现，才点得到设置页 |
 
 只在"进入置顶"且本机 `DISPLAY` 非空时才重启（纯 Wayland 无 X 的环境重启后连窗口都开不出来，
 那种情况退回原样）；spawn 失败也退回原路径。X11/Windows/macOS 的置顶行为不变。

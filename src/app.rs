@@ -33,6 +33,11 @@ fn decode_value(s: &str) -> Option<Value> {
     }
 }
 
+/// `theme` 一列的解析，和 `decode_value` 同样口径：认不出就整行跳过
+fn decode_theme(s: &str) -> Option<ThemeMode> {
+    ThemeMode::from_int(s.parse::<i32>().ok()?)
+}
+
 /// 状态文件按行按 tab 分列，表达式里理论上不会出现这两个字符（按键码不含），
 /// 但写文件前还是折一下，免得手工改过的文件把后面的列挤歪。
 fn one_line(s: &str) -> String {
@@ -52,6 +57,33 @@ impl Default for CalcMode {
     }
 }
 
+/// 主题选择，对应设置页的三选一。整数值与 `MainWindow.theme-mode` 一致（0 浅 / 1 深 / 2 跟随系统）。
+/// 用 enum 而不是裸 i32 存进 `App`：`#[derive(Default)]` 给 i32 的默认值是 0，
+/// 那会被解释成"浅色"，而原版和我们的默认都是跟随系统。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum ThemeMode {
+    Light = 0,
+    Dark = 1,
+    #[default]
+    Auto = 2,
+}
+
+impl ThemeMode {
+    pub fn as_int(self) -> i32 {
+        self as i32
+    }
+
+    /// 认不出的值返回 None：状态文件里的坏行要整行跳过，不能悄悄变成一个别的主题
+    pub fn from_int(v: i32) -> Option<Self> {
+        match v {
+            0 => Some(ThemeMode::Light),
+            1 => Some(ThemeMode::Dark),
+            2 => Some(ThemeMode::Auto),
+            _ => None,
+        }
+    }
+}
+
 /// M5 控制器：四则/一元/百分号/CE/C/← + 记忆（MS/M+/M-/MR/MC）+ 历史 + 物理键盘文本映射。
 /// S2 起追加科学型：模式/角度制/2nd、幂根模二元、三角对数一元、常量与括号。
 #[derive(Default)]
@@ -67,6 +99,7 @@ pub struct App {
     mode: CalcMode,
     angle: AngleMode,
     second: bool,
+    theme: ThemeMode,
 }
 
 impl App {
@@ -180,14 +213,15 @@ impl App {
         let mem = self.mem;
         let history = std::mem::take(&mut self.history);
         let seq = self.hist_seq;
-        let (mode, angle, second) = (self.mode, self.angle, self.second);
+        let (mode, angle, second, theme) = (self.mode, self.angle, self.second, self.theme);
         *self = Self::default();
-        self.mem = mem; // C 不清记忆/历史/模式/角度制，同原版
+        self.mem = mem; // C 不清记忆/历史/模式/角度制/主题，同原版
         self.history = history;
         self.hist_seq = seq;
         self.mode = mode;
         self.angle = angle;
         self.second = second;
+        self.theme = theme;
     }
 
     /// 当前可参与记忆运算的值：有表达式时按完整表达式（含输入串）实时求值，同原版存"屏幕上的值"
@@ -489,6 +523,7 @@ impl App {
                 AngleMode::Rad => "rad",
             }
         ));
+        out.push_str(&format!("theme\t{}\n", self.theme.as_int()));
         if let Some(v) = self.mem.recall() {
             out.push_str(&format!("mem\t{}\n", encode_value(v)));
         }
@@ -506,11 +541,13 @@ impl App {
     /// 从状态文本恢复。认不出的行一律跳过：将来格式升级、或文件被手改坏，
     /// 都只该丢那一行，不该让程序起不来。
     pub fn restore(&mut self, text: &str) {
-        // 三个"单值"字段用 Option<Option<..>>：外层 None = 文件里根本没有这一行（保持默认），
+        // mode/angle 用 Option<Option<..>>：外层 None = 文件里根本没有这一行（保持默认），
         // 内层 None = 有这一行但值认不出（同样保持默认，但别把它当成错误）。
+        // theme/mem 的"认不出就用默认"由 decode_* 返回 None 直接表达，不必套两层。
         let mut mode: Option<Option<CalcMode>> = None;
         let mut angle: Option<Option<AngleMode>> = None;
         let mut mem: Option<Value> = None;
+        let mut theme: Option<ThemeMode> = None;
         let mut history: Vec<HistoryEntry> = Vec::new();
         for line in text.lines() {
             let mut fields = line.split('\t');
@@ -530,6 +567,7 @@ impl App {
                     })
                 }
                 Some("mem") => mem = fields.next().and_then(decode_value),
+                Some("theme") => theme = fields.next().and_then(decode_theme),
                 Some("hist") => {
                     let (Some(value), Some(expression), Some(result)) = (
                         fields.next().and_then(decode_value),
@@ -558,6 +596,9 @@ impl App {
         }
         if let Some(v) = mem {
             self.mem.store(v);
+        }
+        if let Some(t) = theme {
+            self.theme = t;
         }
         if !history.is_empty() {
             self.history = history;
@@ -588,6 +629,18 @@ impl App {
 
     pub fn second_active(&self) -> bool {
         self.second
+    }
+
+    /// 主题选择，直接给 UI 的 `theme-mode` 整数（0 浅 / 1 深 / 2 跟随系统）
+    pub fn theme_mode(&self) -> i32 {
+        self.theme.as_int()
+    }
+
+    /// 认不出的值忽略、保持当前，和状态文件"坏行整行跳过"的口径一致
+    pub fn set_theme_mode(&mut self, v: i32) {
+        if let Some(t) = ThemeMode::from_int(v) {
+            self.theme = t;
+        }
     }
 
     pub fn big_line(&self) -> String {
@@ -771,6 +824,34 @@ mod tests {
         assert!(!app.memory_busy());
         assert!(app.history().is_empty());
         assert_eq!(app.big_line(), "0");
+    }
+
+    /// 主题只存在 UI 属性里时，Wayland 下为置顶重启的那次进程会掉回"跟随系统"，
+    /// 所以它必须和记忆/历史一样进状态文件，且不能被子页的 C 清掉。
+    #[test]
+    fn theme_choice_survives_clear_and_restart() {
+        let mut app = App::new();
+        assert_eq!(app.theme_mode(), 2, "默认跟随系统，不是浅色");
+
+        app.set_theme_mode(0);
+        for k in ["1", "+", "2", "=", "C"] {
+            app.handle_key(k);
+        }
+        assert_eq!(app.theme_mode(), 0, "C 只清记忆/历史，主题偏好要留着");
+
+        let text = app.snapshot();
+        assert!(text.contains("theme\t0\n"), "快照里要带主题行:\n{text}");
+        let mut back = App::new();
+        back.restore(&text);
+        assert_eq!(back.theme_mode(), 0, "重启后仍是浅色");
+
+        // 非法值：UI 回调和状态文件都按"整行跳过"处理，不能变成别的主题
+        back.set_theme_mode(7);
+        assert_eq!(back.theme_mode(), 0);
+        back.restore("theme\t99\n");
+        assert_eq!(back.theme_mode(), 0, "坏 theme 行保持当前值");
+        back.restore("theme\t1\n");
+        assert_eq!(back.theme_mode(), 1);
     }
 
     #[test]

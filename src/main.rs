@@ -184,10 +184,14 @@ impl UiCtx {
 fn main() {
     let ui = MainWindow::new().unwrap();
     let app = Rc::new(RefCell::new(App::new()));
-    // 上次运行留下的记忆槽/历史/模式/角度。读不到就是首次运行，走默认值。
+    // 上次运行留下的记忆槽/历史/模式/角度/主题。读不到就是首次运行，走默认值。
     if let Some(text) = persist::load_text() {
         app.borrow_mut().restore(&text);
     }
+    // 主题的归属在 App（要落盘的就是它），UI 的 theme-mode 只是显示：
+    // 置顶在 Wayland 下靠重启实现，新实例若不从这里回填，用户显式选的浅色/深色会被
+    // 打回"跟随系统"（实测：选浅色 → 点置顶 → 重启后窗口又变回深色）。
+    ui.set_theme_mode(app.borrow().theme_mode());
     // 由"置顶重启到 X11"拉起的实例（见下面 on_pin_toggled）：直接以置顶模式起来，
     // 用户点一次置顶就该看到压在最前的窗口，不该还要再点一次。
     // 无边框可以立刻生效，但"恒在最前"要等窗口映射之后再放开闸门——
@@ -248,7 +252,10 @@ fn main() {
     {
         let app = app.clone();
         let ctx = ctx.clone();
-        ui.on_theme_mode_changed(move |_m: i32| {
+        ui.on_theme_mode_changed(move |m: i32| {
+            // 存进 App 并落盘：主题得跟着"置顶重启"和下次启动走
+            app.borrow_mut().set_theme_mode(m);
+            save_state(&app.borrow());
             ctx.sys_dark.set(platform::system_dark());
             ctx.sync(&app.borrow());
         });

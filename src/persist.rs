@@ -13,6 +13,7 @@
 //! slint-ms-calc<TAB>v1
 //! mode<TAB>scientific
 //! angle<TAB>rad
+//! theme<TAB>1                       # 0 浅 / 1 深 / 2 跟随系统
 //! mem<TAB>E 12 5                      # 或 A <f64 Debug 形式>
 //! hist<TAB>E 1 2<TAB>1 ÷ 2 =<TAB>0.5  # 值<TAB>表达式<TAB>展示结果，最新在前
 //! ```
