@@ -224,27 +224,8 @@ export component MainWindow inherits Window {
                     result-text: root.result-text;
                     result-font: root.result-font;
                 }
-                // DEG/RAD 芯片：同原版放在显示屏左上角（声明在收起遮罩前，浮层打开时点击先收起）
-                if root.sci-mode: Rectangle {
-                    x: 6px;
-                    y: 4px;
-                    width: 46px;
-                    height: 24px;
-                    border-radius: Theme.radius;
-                    border-width: 1px;
-                    border-color: Theme.border;
-                    background: deg-ta.has-hover ? Theme.key-hover : Theme.card;
-                    deg-ta := TouchArea {
-                        clicked => { root.key(root.angle-label == "DEG" ? "rad" : "deg"); }
-                    }
-                    Text {
-                        text: root.angle-label;
-                        color: Theme.text-primary;
-                        font-size: 12px;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                    }
-                }
+                // 角度单位（DEG/RAD）不再占显示区：已收进科学键盘「三角学」浮层的第一行，
+                // 当前单位挂在分组标题上回显（见 scientific.slint）。
                 if root.sci-mode && root.sci-menu != 0: TouchArea {
                     clicked => { root.sci-menu = 0; }
                 }

@@ -122,6 +122,13 @@ export component ScientificKeypad inherits Rectangle {
                         font-size: 12px;
                         vertical-alignment: center;
                     }
+                    // 角度单位进了浮层后，把当前单位挂在分组标题上，浮层收起时也能看见
+                    Text {
+                        text: root.angle-label;
+                        color: Theme.text-secondary;
+                        font-size: 11px;
+                        vertical-alignment: center;
+                    }
                     // 折叠/展开箭头：原用 🔽🔼 emoji，软件渲染器下会变空白，换成可染色的单色 SVG
                     Image {
                         width: 11px;
@@ -193,12 +200,12 @@ export component ScientificKeypad inherits Rectangle {
         }
     }
 
-    // 三角学浮层（2 行 4 列）
+    // 三角学浮层（角度单位单独一行 + 2 行 4 列函数）
     if root.menu-open == 1: Rectangle {
         x: 0px;
         y: 32px;
         width: 340px;
-        height: 106px;
+        height: 156px;
         background: Theme.card;
         border-radius: 8px;
         border-width: 1px;
@@ -210,8 +217,49 @@ export component ScientificKeypad inherits Rectangle {
             width: parent.width - 10px;
             height: parent.height - 10px;
             spacing: 4px;
+
+            // 第一行（跨 4 列）：角度单位。原先是显示区左上角那块 DEG 芯片，
+            // 现在收进三角学浮层，点一下在 DEG/RAD 间切换并收起浮层（同其它选项）。
+            Rectangle {
+                row: 0;
+                col: 0;
+                colspan: 4;
+                min-height: 46px;
+                vertical-stretch: 1;
+                Rectangle {
+                    background: angle-ta.pressed ? Theme.key-pressed : (angle-ta.has-hover ? Theme.key-hover : Theme.key-bg);
+                    border-radius: Theme.radius;
+                    border-width: 1px;
+                    border-color: Theme.border;
+                    HorizontalLayout {
+                        padding-left: 10px;
+                        padding-right: 10px;
+                        spacing: 6px;
+                        Text {
+                            text: "角度单位";
+                            color: Theme.text-secondary;
+                            font-size: 12px;
+                            vertical-alignment: center;
+                        }
+                        Rectangle { horizontal-stretch: 1; }
+                        Text {
+                            text: root.angle-label == "DEG" ? "度 (DEG)" : "弧度 (RAD)";
+                            color: Theme.accent;
+                            font-size: 13px;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+                angle-ta := TouchArea {
+                    clicked => {
+                        root.key-pressed(root.angle-label == "DEG" ? "rad" : "deg");
+                        root.menu-open = 0;
+                    }
+                }
+            }
+
             for k[i] in root.trig-keys: KeypadKey {
-                row: i / 4;
+                row: i / 4 + 1;
                 col: Math.mod(i, 4);
                 text: k.text;
                 code: k.code;
