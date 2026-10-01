@@ -87,7 +87,8 @@ slint-ms-calculator/
 │   └── theme.slint          # 全局常量：色板/圆角/字号（仿 Fluent Light）
 ├── src/
 │   ├── main.rs              # 入口：创建窗口 + 接线
-│   ├── app.rs               # AppController：状态机与 UI 属性映射
+│   ├── app.rs               # AppController：状态机与 UI 属性映射 + 状态快照/恢复
+│   ├── persist.rs           # 状态落盘（记忆/历史/模式/角度）+ Wayland→X11 置顶重启
 │   └── engine/
 │       ├── mod.rs
 │       ├── lexer.rs         # Token：数字/运算符/一元函数/括号(预留)
@@ -114,12 +115,14 @@ cargo build --release
 # Linux（X11 / Wayland 均可，本机实测 2026-10-01）
 cargo run                 # 调试运行，窗口事件循环正常
 cargo build --release
-cargo test                # lib 31 passed + 引擎集成 21 passed
+cargo test                # lib 37 passed + 引擎集成 21 passed
 # 交叉检查 Windows 分支仍能通过类型检查：
 cargo check --target x86_64-pc-windows-msvc
 
 # 系统依赖：链接期需要 fontconfig / freetype（Debian/Ubuntu: libfontconfig-dev libfreetype-dev）
 # 运行时可选：xdg-open（设置页打开链接）、gsettings（浅色/深色自动跟随，缺失则按浅色）
+# 状态文件：~/.local/state/slint-ms-calculator/state.tsv（记忆槽/历史/模式/角度，见 3.9）
+# Wayland 会话注意：点"置顶"会存好状态后重启到 X11 后端（协议层无法在 Wayland 请求置顶），见 3.9
 ```
 
 平台差异都收在 `src/main.rs` 的 `mod platform` 里，按 `#[cfg(windows)]` / `#[cfg(not(windows))]` 隔离：
@@ -298,6 +301,59 @@ DEG/RAD 原先是显示区左上角一块独立芯片，和它真正作用的三
 | 三角学浮层 | 3 行：角度单位 / 2nd sin cos tan / hyp sec csc cot |
 | 函数浮层不受影响 | 仍是 2×3（`\|x\|` floor ceil / rand dms deg），高度未变 |
 | 标准型不受影响 | 窗口仍 380×580，显示区没有残留芯片 |
+
+## 3.9 置顶在 Wayland 下做不到，改为"存状态 + 重启到 X11"（2026-10-01）
+
+**根因不在本项目。** Slint 侧一直把 `always-on-top` 的变化转发下去了
+（`i-slint-backend-winit`/`winitwindowadapter.rs:1898` 按 `window_item.always_on_top()` 算出
+`WindowLevel` 并调 `set_window_level`），但 winit 0.30.13 的 Wayland 后端里这个函数是空实现：
+`platform_impl/linux/wayland/window/mod.rs:430  pub fn set_window_level(&self, _level: WindowLevel) {}`。
+底层也没东西可转：xdg_toplevel 没有"保持在最前"这个状态，wlr-foreign-toplevel-management 也没有，
+GNOME/mutter 不提供对应 D-Bus 接口。所以**原生 Wayland 客户端无法请求置顶**，这是协议层的空缺，
+不是我们少调了一个 API。无边框那半边是有效的（`set_decorations` 在 Wayland 走 CSD），
+现象就是"按钮按下去有反应，窗口不压前"。
+
+**能走的路只有一条：让这个窗口改由 X11 后端承载。** winit 选后端只看 `WAYLAND_DISPLAY`/`WAYLAND_SOCKET`
+是否设置（0.30 已经没有 `WINIT_UNIX_BACKEND` 这类开关），所以必须换个进程重开一次。
+按用户选定的方案，点置顶时不弹提示、直接重启，代价是换进程——于是补上状态落盘，
+把记忆槽、历史、模式、角度带过去。
+
+**状态文件**（`src/persist.rs`）：Linux 走 `$XDG_STATE_HOME`（缺省 `~/.local/state`）、
+Windows 走 `%LOCALAPPDATA%`、macOS 走 `~/Library/Application Support`，文件名固定
+`slint-ms-calculator/state.tsv`。tab 分隔的行式格式，不引序列化依赖：
+
+```text
+slint-ms-calc<TAB>v1
+mode<TAB>scientific
+angle<TAB>rad
+mem<TAB>E 12 5                       # 精确值 E 分子 分母；近似值 A <f64 Debug 形式>
+hist<TAB>E 1 2<TAB>1 ÷ 2 =<TAB>0.5   # 值<TAB>表达式<TAB>展示结果，最新在前
+```
+
+先写 `.tmp` 再 rename（原子），每次按键后写一份（几十行文本）。解析器对认不出的行整行跳过，
+`Rational` 走 `E` 分支所以 `1 ÷ 2` 恢复后仍是精确的 1/2、不会降级成浮点。
+当前输入的表达式不存，同原版重开只有一个干净的 0。
+
+**"启动即置顶"还得多一步。** 新进程在 `MainWindow::new()` 之后立刻 `set_pinned(true)`，
+无边框第一帧就生效，但 `_NET_WM_STATE_ABOVE` 收不到——EWMH 的客户端消息只对**已映射**窗口有效，
+实测这种实例的 `_NET_WM_STATE` 是 `[_NET_WM_STATE_FOCUSED]`。为此加了 `level-pending` 闸门：
+`always-on-top: root.pinned && !root.level-pending`，Rust 先置 true，300ms 后放开，
+让属性真正翻转一次，消息才发得出去。
+
+实测（`/tmp/systest.py`，走 3.7 的点击通道；重启出来的新进程带着同一个 `SLINT_TEST_SERVER`
+连回监听口，所以一轮脚本能跨进程接着驱动）：
+
+| 断言 | 结果 |
+|---|---|
+| Wayland 起 + 点置顶 | X 侧找不到该应用的窗口（原生 Wayland 表面），置顶无从谈起 |
+| X11 起 + 点置顶 | `_NET_WM_STATE` 由 `[_NET_WM_STATE_FOCUSED]` 变 `[_NET_WM_STATE_ABOVE, _NET_WM_STATE_FOCUSED]` |
+| 映射前就 pinned（闸门修复前） | `[_NET_WM_STATE_FOCUSED]`，没有 ABOVE |
+| 加 `level-pending` 后启动即置顶 | `[_NET_WM_STATE_ABOVE, _NET_WM_STATE_FOCUSED]`；再点取消 → `[]` |
+| Wayland 点置顶整条链 | 父进程退出、新 pid 起来、X 窗口 380×580、ABOVE 到位、历史面板里 `1 ÷ 2 = 0.5` 还在 |
+| 状态文件 | 按 1 ÷ 2 = 后落盘为 `mode\tstandard` + `hist\tE 1 2\t1 ÷ 2 =\t0.5`，精确有理数走 `E` 分支 |
+
+只在"进入置顶"且本机 `DISPLAY` 非空时才重启（纯 Wayland 无 X 的环境重启后连窗口都开不出来，
+那种情况退回原样）；spawn 失败也退回原路径。X11/Windows/macOS 的置顶行为不变。
 
 ## 4. 关键设计细节
 

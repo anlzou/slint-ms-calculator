@@ -24,7 +24,11 @@ export component MainWindow inherits Window {
     background: root.css-corners ? transparent : Theme.window;
     // 置顶模式：隐藏标题栏（去掉三个窗口按钮）+ 恒在最前，窗口大小不变
     no-frame: root.pinned;
-    always-on-top: root.pinned;
+    // level-pending 是给"启动即置顶"（Wayland→X11 重启的实例）留的闸门：WM 只认已映射窗口
+    // 收到的 _NET_WM_STATE 客户端消息，映射前发的那次会被丢掉（实测启动即置顶时 ABOVE 不出现）。
+    // 所以那一类实例先让 always-on-top 停在 false，等窗口起来后由 Rust 放开闸门，
+    // 属性真正翻转一次才会把消息发出去。无边框不受影响，第一帧就是无边框的。
+    always-on-top: root.pinned && !root.level-pending;
     // 无边框模式下窗口四缘留出拖拽带，可用边缘放大缩小（winit 后端）
     resize-border-width: root.pinned ? 8px : 0px;
     preferred-width: 380px;
@@ -55,6 +59,10 @@ export component MainWindow inherits Window {
 
     // 保持在顶部：无边框 + 恒在最前（窗口尺寸不变），置顶模式带关闭按钮
     in-out property <bool> pinned: false;
+
+    /// 压住 always-on-top 的闸门，只为"启动即置顶"这一条路径服务（见上面 always-on-top 的注释）：
+    /// Rust 先置 true、等窗口映射后再置 false，让最前状态真正翻转一次并被 WM 收到。
+    in-out property <bool> level-pending: false;
 
     /// 自绘圆角半径（0 = 不启用）。Windows 交给 DWM 加圆角，Rust 端传 0；
     /// Linux/macOS 的合成器既不给无边框窗口加圆角，也不给普通模式客户区的底部加圆角，

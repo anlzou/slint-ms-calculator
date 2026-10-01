@@ -2,6 +2,7 @@ slint::include_modules!();
 
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 use slint_ms_calculator::app::{App, CalcMode};
+use slint_ms_calculator::persist;
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
@@ -133,6 +134,14 @@ struct UiCtx {
     last_sci: Rc<Cell<bool>>,
 }
 
+/// 记忆槽/历史/模式/角度落盘。每次按键后都写一份（几十行文本，成本可忽略），
+/// 这样"置顶重启到 X11"和"下次打开计算器"都能拿到最新状态。
+fn save_state(a: &App) {
+    if let Err(err) = persist::save_text(&a.snapshot()) {
+        eprintln!("状态落盘失败（不影响使用）: {err}");
+    }
+}
+
 impl UiCtx {
     fn sync(&self, a: &App) {
         let Some(ui) = self.weak.upgrade() else { return };
@@ -175,6 +184,24 @@ impl UiCtx {
 fn main() {
     let ui = MainWindow::new().unwrap();
     let app = Rc::new(RefCell::new(App::new()));
+    // 上次运行留下的记忆槽/历史/模式/角度。读不到就是首次运行，走默认值。
+    if let Some(text) = persist::load_text() {
+        app.borrow_mut().restore(&text);
+    }
+    // 由"置顶重启到 X11"拉起的实例（见下面 on_pin_toggled）：直接以置顶模式起来，
+    // 用户点一次置顶就该看到压在最前的窗口，不该还要再点一次。
+    // 无边框可以立刻生效，但"恒在最前"要等窗口映射之后再放开闸门——
+    // 映射前发的 _NET_WM_STATE 客户端消息会被 WM 丢掉（实测启动即置顶时 ABOVE 不出现）。
+    if persist::pin_on_start() {
+        ui.set_pinned(true);
+        ui.set_level_pending(true);
+        let weak = ui.as_weak();
+        slint::Timer::single_shot(std::time::Duration::from_millis(300), move || {
+            if let Some(ui) = weak.upgrade() {
+                ui.set_level_pending(false);
+            }
+        });
+    }
     let hist = Rc::new(VecModel::<HistoryItem>::default());
     ui.set_history(ModelRc::from(hist.clone()));
 
@@ -197,6 +224,7 @@ fn main() {
         let ctx = ctx.clone();
         ui.on_key(move |k: SharedString| {
             app.borrow_mut().handle_key(&k.to_string());
+            save_state(&app.borrow());
             ctx.sync(&app.borrow());
         });
     }
@@ -213,6 +241,7 @@ fn main() {
         let ctx = ctx.clone();
         ui.on_history_clear(move || {
             app.borrow_mut().clear_history();
+            save_state(&app.borrow());
             ctx.sync(&app.borrow());
         });
     }
@@ -240,7 +269,27 @@ fn main() {
     //（实测入口 380x580，120ms 后已经是坏值）。还原仍走两步微扰：先 +2px、隔一拍再回到
     // 目标值，强制两次真实的 WM_SIZE（同一帧内改了又改会被合并，无效）。
     let pin_weak = ui.as_weak();
+    let pin_app = app.clone();
     ui.on_pin_toggled(move || {
+        // 原生 Wayland 下置顶做不到：winit 的 Wayland 后端把 set_window_level 实现成空函数，
+        // xdg_toplevel 也没有"保持在最前"这个状态，GNOME/mutter 不提供对应接口。
+        // 想真置顶只能让这个窗口走 X11 后端（winit 只看 WAYLAND_DISPLAY/WAYLAND_SOCKET 是否
+        // 存在来选后端），也就是换个进程重开。先落盘（记忆/历史要跟着过去），
+        // 再带着 SLINT_CALC_PIN_ON_START=1 重启，新窗口直接以置顶模式起来。
+        // 只在"进入置顶"且本机确有 X 可连时这么做；失败就退回当前后端继续走原路径。
+        if let Some(ui) = pin_weak.upgrade() {
+            if ui.get_pinned() && persist::can_restart_to_x11() {
+                save_state(&pin_app.borrow());
+                match persist::restart_to_x11() {
+                    Ok(_) => {
+                        let _ = ui.window().hide();
+                        let _ = slint::quit_event_loop();
+                        return;
+                    }
+                    Err(err) => eprintln!("重启到 X11 失败，退回当前后端继续置顶: {err}"),
+                }
+            }
+        }
         platform::force_rounded_corners();
         let target = pin_weak.upgrade().map(|u| u.window().size());
         let weak = pin_weak.clone();

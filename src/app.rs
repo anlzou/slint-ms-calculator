@@ -1,6 +1,6 @@
 use crate::engine::{
     apply_unary_in, error_message, evaluate, expression_to_display, value_from_str, value_rand,
-    value_to_display, AngleMode, CalcError, Memory, Op, Tok, UnaryOp, Value,
+    value_to_display, AngleMode, CalcError, Memory, Op, Rational, Tok, UnaryOp, Value,
 };
 
 /// 一条历史记录：表达式（含末尾 "="）、展示结果、可直接召回的值
@@ -9,6 +9,34 @@ pub struct HistoryEntry {
     pub expression: String,
     pub result: String,
     pub value: Value,
+}
+
+/// 历史上限（同原版：只留最近 50 条），落盘与恢复都按这个上限走
+pub const HISTORY_LIMIT: usize = 50;
+
+/// 值 → 状态文件里的一个字段。精确有理数走 `E num den`（`0.5` 恢复后仍是 1/2，
+/// 不降级成浮点），近似值走 `A <Debug 形式>`；Rust 的 f64 Debug 是最短可回读表示，
+/// `inf`/`NaN` 也能被 `parse::<f64>()` 原样读回。
+fn encode_value(v: Value) -> String {
+    match v {
+        Value::Exact(r) => format!("E {} {}", r.num, r.den),
+        Value::Approx(f) => format!("A {f:?}"),
+    }
+}
+
+fn decode_value(s: &str) -> Option<Value> {
+    let mut p = s.split(' ');
+    match p.next()? {
+        "E" => Rational::new(p.next()?.parse().ok()?, p.next()?.parse().ok()?).map(Value::exact),
+        "A" => p.next()?.parse::<f64>().ok().map(Value::Approx),
+        _ => None,
+    }
+}
+
+/// 状态文件按行按 tab 分列，表达式里理论上不会出现这两个字符（按键码不含），
+/// 但写文件前还是折一下，免得手工改过的文件把后面的列挤歪。
+fn one_line(s: &str) -> String {
+    s.chars().map(|c| if c == '\t' || c == '\n' || c == '\r' { ' ' } else { c }).collect()
 }
 
 /// 计算器模式（S3 起驱动 UI 键盘互换）
@@ -214,7 +242,7 @@ impl App {
             return;
         }
         self.history.insert(0, HistoryEntry { expression, result, value: *v });
-        self.history.truncate(50);
+        self.history.truncate(HISTORY_LIMIT);
         self.hist_seq += 1;
     }
 
@@ -445,6 +473,100 @@ impl App {
         }
     }
 
+    /// 序列化成状态文本（格式见 `crate::persist`）：只存"换个进程还想看到"的东西——
+    /// 模式、角度制、记忆槽、历史（最新在前，最多 `HISTORY_LIMIT` 条）。
+    /// 当前输入的表达式不存，同原版重开计算器只有一个干净的 0。
+    pub fn snapshot(&self) -> String {
+        let mut out = String::from("slint-ms-calc\tv1\n");
+        out.push_str(&format!(
+            "mode\t{}\n",
+            if self.mode == CalcMode::Scientific { "scientific" } else { "standard" }
+        ));
+        out.push_str(&format!(
+            "angle\t{}\n",
+            match self.angle {
+                AngleMode::Deg => "deg",
+                AngleMode::Rad => "rad",
+            }
+        ));
+        if let Some(v) = self.mem.recall() {
+            out.push_str(&format!("mem\t{}\n", encode_value(v)));
+        }
+        for h in self.history.iter().take(HISTORY_LIMIT) {
+            out.push_str(&format!(
+                "hist\t{}\t{}\t{}\n",
+                encode_value(h.value),
+                one_line(&h.expression),
+                one_line(&h.result)
+            ));
+        }
+        out
+    }
+
+    /// 从状态文本恢复。认不出的行一律跳过：将来格式升级、或文件被手改坏，
+    /// 都只该丢那一行，不该让程序起不来。
+    pub fn restore(&mut self, text: &str) {
+        // 三个"单值"字段用 Option<Option<..>>：外层 None = 文件里根本没有这一行（保持默认），
+        // 内层 None = 有这一行但值认不出（同样保持默认，但别把它当成错误）。
+        let mut mode: Option<Option<CalcMode>> = None;
+        let mut angle: Option<Option<AngleMode>> = None;
+        let mut mem: Option<Value> = None;
+        let mut history: Vec<HistoryEntry> = Vec::new();
+        for line in text.lines() {
+            let mut fields = line.split('\t');
+            match fields.next() {
+                Some("mode") => {
+                    mode = Some(match fields.next() {
+                        Some("scientific") => Some(CalcMode::Scientific),
+                        Some("standard") => Some(CalcMode::Standard),
+                        _ => None,
+                    })
+                }
+                Some("angle") => {
+                    angle = Some(match fields.next() {
+                        Some("rad") => Some(AngleMode::Rad),
+                        Some("deg") => Some(AngleMode::Deg),
+                        _ => None,
+                    })
+                }
+                Some("mem") => mem = fields.next().and_then(decode_value),
+                Some("hist") => {
+                    let (Some(value), Some(expression), Some(result)) = (
+                        fields.next().and_then(decode_value),
+                        fields.next(),
+                        fields.next(),
+                    ) else {
+                        continue;
+                    };
+                    if expression.is_empty() || history.len() >= HISTORY_LIMIT {
+                        continue;
+                    }
+                    history.push(HistoryEntry {
+                        expression: expression.to_string(),
+                        result: result.to_string(),
+                        value,
+                    });
+                }
+                _ => {}
+            }
+        }
+        if let Some(Some(m)) = mode {
+            self.mode = m;
+        }
+        if let Some(Some(a)) = angle {
+            self.angle = a;
+        }
+        if let Some(v) = mem {
+            self.mem.store(v);
+        }
+        if !history.is_empty() {
+            self.history = history;
+        }
+        // 版本号必须动：Rust 端靠它决定要不要重建历史模型，启动时的初值是 0，
+        // 恢复出条目却仍是 0 的话，历史面板会一直是空的。
+        self.hist_seq += 1;
+    }
+
     pub fn set_mode(&mut self, m: CalcMode) {
         if self.mode == m {
             return;
@@ -542,7 +664,8 @@ fn plain_text(f: f64) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{App, CalcMode};
+    use super::{encode_value, App, CalcMode, HISTORY_LIMIT};
+    use crate::engine::{Rational, Value};
 
     fn type_keys(seq: &[&str]) -> (String, String) {
         let mut app = App::new();
@@ -550,6 +673,104 @@ mod tests {
             app.handle_key(k);
         }
         (app.big_line(), app.small_line())
+    }
+
+    /// 状态落盘 ↔ 恢复：置顶在 Wayland 下只能靠重启进程实现，重启不能丢记忆和历史
+    #[test]
+    fn snapshot_roundtrip_keeps_mem_history_mode_angle() {
+        let mut app = App::new();
+        for k in ["1", "/", "2", "=", "3", "+", "4", "="] {
+            app.handle_key(k);
+        }
+        app.handle_key("8");
+        app.handle_key("ms");
+        app.handle_key("scientific");
+        app.handle_key("rad");
+        // 上面切模式时把表达式清了，重新攒一条含近似值的历史（sin 30° 走 f64 分支）
+        app.handle_key("sin");
+        app.handle_key("3");
+        app.handle_key("0");
+        app.handle_key(")");
+        app.handle_key("=");
+
+        let mut back = App::new();
+        back.restore(&app.snapshot());
+        assert_eq!(back.mode(), CalcMode::Scientific, "模式要跟着恢复");
+        assert_eq!(back.angle_label(), "RAD");
+        assert_eq!(back.history().len(), app.history().len());
+        assert_ne!(back.history_seq(), 0, "版本号要动，否则 UI 认为历史模型不用重建");
+        assert_eq!(back.history()[0].expression, app.history()[0].expression);
+        assert_eq!(back.history()[1].result, "7");
+        assert_eq!(back.history()[2].result, "0.5");
+        // 精确有理数不能降级成浮点：1 ÷ 2 恢复后召回，显示的仍是 0.5 且值逐位相同
+        assert_eq!(back.history()[2].value, app.history()[2].value);
+        assert!(back.memory_busy());
+        back.handle_key("mr");
+        assert_eq!(back.big_line(), "8");
+    }
+
+    #[test]
+    fn snapshot_roundtrip_covers_special_floats() {
+        for v in [
+            Value::Approx(f64::INFINITY),
+            Value::Approx(f64::NEG_INFINITY),
+            Value::Approx(f64::NAN),
+            Value::Approx(1e300),
+            Value::from_int(-7),
+            Value::exact(Rational::new(1, 3).unwrap()),
+        ] {
+            let mut app = App::new();
+            app.restore(&format!("mem\t{}\n", encode_value(v)));
+            assert!(app.memory_busy(), "{} 应恢复出记忆槽", encode_value(v));
+            let mut back = App::new();
+            back.restore(&app.snapshot());
+            // NaN 走 to_bits 比较（Value 的 PartialEq 对 Approx 就是这么做的）
+            assert_eq!(
+                back.mem.recall().map(|x| x.to_f64().to_bits()),
+                Some(v.to_f64().to_bits()),
+                "{} 存出去要能原样回来",
+                encode_value(v)
+            );
+        }
+    }
+
+    #[test]
+    fn restore_skips_unparsable_lines() {
+        let text = "slint-ms-calc\tv9\n\
+                    future-field\twhatever\n\
+                    mode\tcalculator\n\
+                    mem\tE 1 0\n\
+                    mem\tZZZ\n\
+                    hist\tE 3 4\t3 ÷ 4 =\t0.75\n\
+                    hist\tbogus x y\n";
+        let mut app = App::new();
+        app.restore(text);
+        assert!(!app.memory_busy(), "坏 mem 行要整行跳过");
+        assert_eq!(app.mode(), CalcMode::Standard, "认不出的模式值不改默认");
+        assert_eq!(app.history().len(), 1);
+        assert_eq!(app.history()[0].result, "0.75");
+        assert_ne!(app.history_seq(), 0, "有恢复内容就要触发模型重建");
+    }
+
+    #[test]
+    fn restore_truncates_to_history_limit() {
+        let mut text = String::from("slint-ms-calc\tv1\n");
+        for i in 0..(HISTORY_LIMIT + 20) {
+            text.push_str(&format!("hist\tE {i} 1\t{i} =\t{i}\n"));
+        }
+        let mut app = App::new();
+        app.restore(&text);
+        assert_eq!(app.history().len(), HISTORY_LIMIT);
+        assert_eq!(app.history()[0].result, "0", "顺序保持：最新在前");
+    }
+
+    #[test]
+    fn empty_snapshot_restores_nothing_but_version() {
+        let mut app = App::new();
+        app.restore("slint-ms-calc\tv1\n");
+        assert!(!app.memory_busy());
+        assert!(app.history().is_empty());
+        assert_eq!(app.big_line(), "0");
     }
 
     #[test]
