@@ -109,7 +109,6 @@ slint-ms-calculator/
 ```bash
 # Windows
 cargo run
-
 cargo build --release
 
 # Linux（X11 / Wayland 均可，本机实测 2026-10-01）
@@ -125,9 +124,10 @@ cargo check --target x86_64-pc-windows-msvc
 
 平台差异都收在 `src/main.rs` 的 `mod platform` 里，按 `#[cfg(windows)]` / `#[cfg(not(windows))]` 隔离：
 Windows 走 `dwmapi`/`user32` 设圆角、读注册表 `AppsUseLightTheme`、用 `cmd /C start` 开链接；
-Linux 圆角交给合成器（空实现）、深浅色读 `gsettings org.gnome.desktop.interface color-scheme`、链接用 `xdg-open`；
-macOS 圆角同样空实现、深浅色读 `defaults read -g AppleInterfaceStyle`、链接用 `open`。
-置顶切换后的 2px 尺寸微扰（winit 不发 resize 事件）三平台共用，故保留在通用代码里。
+Linux 深浅色读 `gsettings org.gnome.desktop.interface color-scheme`、链接用 `xdg-open`；
+macOS 深浅色读 `defaults read -g AppleInterfaceStyle`、链接用 `open`。
+`force_rounded_corners()` 只有 Windows 有实现（其余平台是空函数）——非 Windows 的置顶模式圆角改由
+`.slint` 自绘（见 3.4）。置顶切换后的 2px 尺寸微扰（winit 不发 resize 事件）三平台共用，故保留在通用代码里。
 
 ## 3.2 Linux 界面实测（2026-10-01，Ubuntu / GNOME Shell 50，Wayland 会话内抓 XWayland 窗口）
 
@@ -156,8 +156,8 @@ GNOME 50 的 `org.gnome.Shell.Screenshot` D-Bus 对普通进程返回 `Screensho
 release 构建同样 380×580。±2px 两步微扰仍保留（Windows 靠它触发 WM_SIZE 重排）。
 已知边界：微扰占用约 240ms，这期间切「标准↔科学」会被还原值覆盖（实测 `pin,sci` 停在 580 而非 620），人手节奏碰不到。
 
-圆角：Linux 没有 DWM 那种窗口圆角 API，无边框窗口的圆角完全由合成器决定，GNOME 不给无边框窗口加圆角。
-应用侧要圆角只能自绘（透明边距 + 自画圆角和阴影），Slint 的 winit 后端没有稳定的透明窗口支持，故未做。
+圆角：当时记的结论"应用侧要圆角只能自绘，而 Slint 的 winit 后端没有稳定的透明窗口支持，故未做"是错的——
+winit 后端建窗时本来就带 `with_transparent(true)`，自绘圆角可行，实现与实测见 3.4。
 
 dev 与 release 抓图字节一致（`/tmp/s_drawer.png` 与 `/tmp/rel_drawer.png` md5 相同）；
 去掉验证脚手架后的抓图与修复前基线 md5 相同（`d184382f…`），确认清理没改渲染。
@@ -185,6 +185,40 @@ emoji 无效，只能靠底色高亮表示选中）。窗口图标 `ui/icon.png`
 科学键盘 2 处折叠箭头、顶栏图钉/历史、置顶态关闭键，两种渲染器下全部可见、无空白；
 software 与默认两张菜单图 md5 仍不同（`a3084539…` vs `5d5f0ed4…`），排除"其实跑的是同一个渲染器"。
 `cargo test` 31 + 21 通过，`cargo check --target x86_64-pc-windows-msvc` 通过（SVG 随二进制内嵌，Windows 侧不额外带文件）。
+
+## 3.4 置顶（无边框）模式的自绘圆角（2026-10-01）
+
+Windows 有 DWM 的 `DWMWA_WINDOW_CORNER_PREFERENCE`，Linux/macOS 没有对应 API：GNOME 的合成器只给
+带装饰的窗口加圆角，无边框窗口一律直角。所以非 Windows 走"透明底 + 圆角矩形"的自绘方案：
+
+- `ui/main.slint`：新增 `in-out property <float> pin-corner-radius: 0;` 和派生的
+  `css-corners: root.pinned && root.pin-corner-radius > 0`。启用时 `Window { background: transparent }`，
+  并在最底层放一块 `Rectangle { background: Theme.window; border-radius: pin-corner-radius * 1px }` 上色。
+- `src/main.rs`：`#[cfg(not(windows))] ui.set_pin_corner_radius(12.0);`。Windows 保持 0，继续由 DWM 负责，
+  不让两条圆角路径叠加；半径只有一处真值，`.slint` 里 `* 1px` 转成 length。
+
+关键前提是"Slint 能不能要到带 alpha 的表面"。答案是可以：`i-slint-backend-winit` 的
+`WinitWindowAdapter::window_attributes()` 本来就写着 `WindowAttributes::default().with_transparent(true)`，
+X11 上 winit 因此挑 32bpp ARGB visual，femtovg / wgpu 也按 `window_attributes.transparent` 配置表面。
+源码里只有 macOS 会在 background 变化时补调 `set_transparent`（`wants_transparent` 被
+`#[cfg(target_os = "macos")]` 圈住），Linux 走的是"建窗即透明"这条更直接的路。
+
+实测（`XGetImage` 读 32bpp 缓冲的 alpha 通道，半径设 12）：
+
+| 状态 | 四角 alpha | 全透明像素 | 中心 alpha |
+|---|---|---|---|
+| 置顶，默认渲染器（GL/femtovg） | 0 | 92（另有一圈半透明过渡像素） | 255 |
+| 置顶，`SLINT_BACKEND=software` | 0 | 184 | 255 |
+| 普通（带标题栏） | 255 | 0（220400/220400 全不透明） | 255 |
+
+轮廓与圆方程对照：y=0..7 行首个不透明像素实测 x = 7,5,4,3,2,1,1,0，与 r≈11 的圆弧一致
+（r=12 的理论值是 8.6,6.2,4.7,3.5,2.6,1.9,1.3,0.9，Slint 的光栅化略紧一档），不是 45° 斜切。
+右下角的 `=` 键会被这段圆弧切掉一角——与 Windows 上 DWM 遮罩裁内容的表现一致，属预期；
+顶栏内容都在 4px 内边距 + 12px 半径的圆弧以内，没有被切到的。
+切换 no-frame 会重建窗口，透明属性随新窗口一起重建，实测重建后四角仍是 alpha=0。
+
+边界：只在有合成器时成立。裸 X11 且没有合成器（或不支持 per-pixel alpha 的桌面）时四角会露出黑底；
+macOS 走同一开关，但本机无法实测。投影没做——要投影得再留一圈透明边距，会把内容整体内缩。
 
 ## 4. 关键设计细节
 

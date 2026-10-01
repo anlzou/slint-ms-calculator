@@ -177,6 +177,12 @@ fn main() {
     let hist = Rc::new(VecModel::<HistoryItem>::default());
     ui.set_history(ModelRc::from(hist.clone()));
 
+    // 置顶（无边框）模式的圆角：Windows 由 DWM 施加（platform::force_rounded_corners），
+    // Linux/macOS 的合成器不给无边框窗口加圆角，只能自绘——把半径交给 .slint，
+    // 窗口底色转透明、由圆角矩形上色。半径为 0 时 .slint 完全不碰透明，走原来的路径。
+    #[cfg(not(windows))]
+    ui.set_pin_corner_radius(12.0);
+
     let ctx = UiCtx {
         weak: ui.as_weak(),
         hist,
