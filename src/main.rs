@@ -3,34 +3,116 @@ slint::include_modules!();
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 use slint_ms_calculator::app::{App, CalcMode};
 use std::cell::{Cell, RefCell};
-use std::ffi::c_void;
 use std::rc::Rc;
 
-#[link(name = "dwmapi")]
-unsafe extern "system" {
-    fn DwmSetWindowAttribute(
-        hwnd: *mut c_void,
-        attr: u32,
-        pv_attribute: *const u32,
-        cb_attribute: u32,
-    ) -> i32;
-}
+/// 平台相关部分：Win11 圆角、系统深浅色探测、默认浏览器打开链接。
+/// Windows 之外不存在 dwmapi/user32、注册表和 cmd，这些符号必须按 cfg 隔离，
+/// 否则 Linux/macOS 会在链接阶段报 unable to find library -ldwmapi / -luser32。
+#[cfg(windows)]
+mod platform {
+    use std::ffi::c_void;
 
-#[link(name = "user32")]
-unsafe extern "system" {
-    fn FindWindowW(class: *const u16, title: *const u16) -> *mut c_void;
-}
+    #[link(name = "dwmapi")]
+    unsafe extern "system" {
+        fn DwmSetWindowAttribute(
+            hwnd: *mut c_void,
+            attr: u32,
+            pv_attribute: *const u32,
+            cb_attribute: u32,
+        ) -> i32;
+    }
 
-/// Win11：DWMWA_WINDOW_CORNER_PREFERENCE(33) = DWMWCP_ROUND(2)。
-/// 无边框（置顶）模式下 DWM 可能给出直角，显式设置保持圆角。
-fn force_rounded_corners() {
-    let title: Vec<u16> = "计算器".encode_utf16().chain(std::iter::once(0)).collect();
-    unsafe {
-        let hwnd = FindWindowW(std::ptr::null(), title.as_ptr());
-        if !hwnd.is_null() {
-            let pref: u32 = 2;
-            let _ = DwmSetWindowAttribute(hwnd, 33, &pref, 4);
+    #[link(name = "user32")]
+    unsafe extern "system" {
+        fn FindWindowW(class: *const u16, title: *const u16) -> *mut c_void;
+    }
+
+    /// Win11：DWMWA_WINDOW_CORNER_PREFERENCE(33) = DWMWCP_ROUND(2)。
+    /// 无边框（置顶）模式下 DWM 可能给出直角，显式设置保持圆角。
+    pub fn force_rounded_corners() {
+        let title: Vec<u16> = "计算器".encode_utf16().chain(std::iter::once(0)).collect();
+        unsafe {
+            let hwnd = FindWindowW(std::ptr::null(), title.as_ptr());
+            if !hwnd.is_null() {
+                let pref: u32 = 2;
+                let _ = DwmSetWindowAttribute(hwnd, 33, &pref, 4);
+            }
         }
+    }
+
+    /// Slint 1.18 无系统深浅色 API，读注册表 AppsUseLightTheme（0=深色）
+    pub fn system_dark() -> bool {
+        std::process::Command::new("reg")
+            .args([
+                "query",
+                r"HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize",
+                "/v",
+                "AppsUseLightTheme",
+            ])
+            .output()
+            .map(|o| String::from_utf8_lossy(&o.stdout).contains("0x0"))
+            .unwrap_or(false)
+    }
+
+    /// Windows: start "" <url>；用 cmd 内建 start 打开默认浏览器
+    pub fn open_url(url: &str) {
+        let _ = std::process::Command::new("cmd")
+            .args(["/C", "start", "", url])
+            .spawn();
+    }
+}
+
+#[cfg(not(windows))]
+mod platform {
+    /// 圆角由合成器/窗口管理器负责，无需（也无法）手动设置。
+    pub fn force_rounded_corners() {}
+
+    /// GNOME/KDE 用 gsettings 的 color-scheme，其次看 gtk-theme 名；读不到就按浅色。
+    #[cfg(target_os = "linux")]
+    pub fn system_dark() -> bool {
+        let gsettings = |key: &str| -> Option<String> {
+            std::process::Command::new("gsettings")
+                .args(["get", "org.gnome.desktop.interface", key])
+                .output()
+                .ok()
+                .filter(|o| o.status.success())
+                .map(|o| String::from_utf8_lossy(&o.stdout).to_lowercase())
+        };
+        if let Some(scheme) = gsettings("color-scheme") {
+            if scheme.contains("dark") {
+                return true;
+            }
+            if scheme.contains("light") {
+                return false;
+            }
+        }
+        gsettings("gtk-theme")
+            .map(|t| t.contains("dark"))
+            .unwrap_or(false)
+    }
+
+    /// macOS：AppleInterfaceStyle 存在即为深色。
+    #[cfg(target_os = "macos")]
+    pub fn system_dark() -> bool {
+        std::process::Command::new("defaults")
+            .args(["read", "-g", "AppleInterfaceStyle"])
+            .output()
+            .map(|o| String::from_utf8_lossy(&o.stdout).contains("Dark"))
+            .unwrap_or(false)
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    pub fn system_dark() -> bool {
+        false
+    }
+
+    /// Linux 用 xdg-open，macOS 用 open。
+    pub fn open_url(url: &str) {
+        #[cfg(target_os = "macos")]
+        let mut cmd = std::process::Command::new("open");
+        #[cfg(not(target_os = "macos"))]
+        let mut cmd = std::process::Command::new("xdg-open");
+        let _ = cmd.arg(url).spawn();
     }
 }
 
@@ -38,20 +120,6 @@ fn force_rounded_corners() {
 fn fit_font(text: &str) -> f32 {
     let n = text.chars().count().max(1) as f32;
     (330.0 / (n * 0.62)).clamp(15.0, 34.0)
-}
-
-/// Slint 1.18 无系统深浅色 API，读注册表 AppsUseLightTheme（0=深色）
-fn system_dark() -> bool {
-    std::process::Command::new("reg")
-        .args([
-            "query",
-            r"HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize",
-            "/v",
-            "AppsUseLightTheme",
-        ])
-        .output()
-        .map(|o| String::from_utf8_lossy(&o.stdout).contains("0x0"))
-        .unwrap_or(false)
 }
 
 /// 把 App 状态同步到 UI；历史模型只在版本号变化时整体重建
@@ -113,7 +181,7 @@ fn main() {
         weak: ui.as_weak(),
         hist,
         seq: Rc::new(Cell::new(0)),
-        sys_dark: Rc::new(Cell::new(system_dark())),
+        sys_dark: Rc::new(Cell::new(platform::system_dark())),
         last_sci: Rc::new(Cell::new(false)),
     };
 
@@ -145,16 +213,11 @@ fn main() {
         let app = app.clone();
         let ctx = ctx.clone();
         ui.on_theme_mode_changed(move |_m: i32| {
-            ctx.sys_dark.set(system_dark());
+            ctx.sys_dark.set(platform::system_dark());
             ctx.sync(&app.borrow());
         });
     }
-    ui.on_open_link(|url| {
-        // Windows: start "" <url>；用 cmd 内建 start 打开默认浏览器
-        let _ = std::process::Command::new("cmd")
-            .args(["/C", "start", "", &url.to_string()])
-            .spawn();
-    });
+    ui.on_open_link(|url| platform::open_url(&url.to_string()));
     let close_weak = ui.as_weak();
     ui.on_close_requested(move || {
         // 先 hide 让窗口立即消失，再请求退出事件循环，确保进程正常结束
@@ -168,10 +231,10 @@ fn main() {
     // 先放大 2px、隔一拍再还原，强制两次真实的 WM_SIZE（同一帧内改了又改会被合并，无效）。
     let pin_weak = ui.as_weak();
     ui.on_pin_toggled(move || {
-        force_rounded_corners();
+        platform::force_rounded_corners();
         let weak = pin_weak.clone();
         slint::Timer::single_shot(std::time::Duration::from_millis(120), move || {
-            force_rounded_corners();
+            platform::force_rounded_corners();
             let Some(ui) = weak.upgrade() else { return };
             let win = ui.window();
             let s = win.size();
@@ -187,7 +250,7 @@ fn main() {
         });
     });
 
-    force_rounded_corners();
+    platform::force_rounded_corners();
     ctx.sync(&app.borrow());
     ui.run().unwrap();
 }

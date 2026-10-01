@@ -101,6 +101,30 @@ slint-ms-calculator/
 
 主题常量（仿 Win11 浅色）：窗口 `#f3f3f3`，卡片/按键 `#fbfbfb`，按键 hover `#f5f5f5` 按下 `#e8e8e8`，文字 `#1a1a1a` 次要 `#606060`，强调 `#0067c0`，圆角 `4px`，主结果字号 `40px`。
 
+## 3.1 运行
+```bash
+# Windows
+cargo run
+
+cargo build --release
+
+# Linux（X11 / Wayland 均可，本机实测 2026-10-01）
+cargo run                 # 调试运行，窗口事件循环正常
+cargo build --release
+cargo test                # lib 31 passed + 引擎集成 21 passed
+# 交叉检查 Windows 分支仍能通过类型检查：
+cargo check --target x86_64-pc-windows-msvc
+
+# 系统依赖：链接期需要 fontconfig / freetype（Debian/Ubuntu: libfontconfig-dev libfreetype-dev）
+# 运行时可选：xdg-open（设置页打开链接）、gsettings（浅色/深色自动跟随，缺失则按浅色）
+```
+
+平台差异都收在 `src/main.rs` 的 `mod platform` 里，按 `#[cfg(windows)]` / `#[cfg(not(windows))]` 隔离：
+Windows 走 `dwmapi`/`user32` 设圆角、读注册表 `AppsUseLightTheme`、用 `cmd /C start` 开链接；
+Linux 圆角交给合成器（空实现）、深浅色读 `gsettings org.gnome.desktop.interface color-scheme`、链接用 `xdg-open`；
+macOS 圆角同样空实现、深浅色读 `defaults read -g AppleInterfaceStyle`、链接用 `open`。
+置顶切换后的 2px 尺寸微扰（winit 不发 resize 事件）三平台共用，故保留在通用代码里。
+
 ## 4. 关键设计细节
 
 ### 4.1 Slint ↔ Rust 接口
